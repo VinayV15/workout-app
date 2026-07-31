@@ -199,15 +199,37 @@ export function fmtPace(secPerUnit: number, units: Profile['units']): string {
 // Strength math
 // ---------------------------------------------------------------------------
 
+/** Beyond this a set measures endurance, not maximal strength. */
+export const E1RM_MAX_REPS = 20
+
 /**
- * Estimated one-rep max. Epley above 1 rep; capped at 12 reps where the
- * formula starts to overestimate badly.
+ * Estimated one-rep max: the heaviest single rep your set implies.
+ *
+ * A blend of three established formulas rather than one, because each is only
+ * trustworthy over part of the rep range and their errors run in opposite
+ * directions. Epley is reliable in the middle and drifts high as reps climb;
+ * Brzycki matches it around 10 and then diverges badly — its denominator runs out,
+ * so at 20 reps it claims twice the load; Lombardi is conservative throughout.
+ *
+ * This used to be Epley alone, capped at 12 reps, which understated anyone training
+ * in the 12-20 range and — worse — made their estimate go *flat*, because every set
+ * past 12 reps scored identically. Someone who trains at 15 reps could not see
+ * strength improve at all.
+ *
+ * Brzycki's weight fades out smoothly between 6 and 12 reps rather than being
+ * switched off at a threshold: a step there would make 11 reps score lower than 10,
+ * and "more reps at the same weight is stronger" has to hold everywhere.
  */
 export function e1rm(weight: number, reps: number): number {
   if (weight <= 0 || reps <= 0) return 0
+  // A single is not an estimate — it is the measurement.
   if (reps === 1) return weight
-  const r = Math.min(reps, 12)
-  return weight * (1 + r / 30)
+  const r = Math.min(reps, E1RM_MAX_REPS)
+  const epley = weight * (1 + r / 30)
+  const brzycki = weight * (36 / (37 - r))
+  const lombardi = weight * r ** 0.1
+  const brzyckiWeight = Math.max(0, Math.min(1, (12 - r) / 6))
+  return (epley + lombardi + brzyckiWeight * brzycki) / (2 + brzyckiWeight)
 }
 
 export function bestSetE1rm(sets: SetEntry[], bodyweightLb = 0, loadType: Exercise['loadType'] = 'weight'): number {
@@ -809,12 +831,18 @@ export function projectGoal(data: AppData): { weeks: number; date: string; kind:
 
 export const RACE_DISTANCES: { name: string; mi: number }[] = [
   { name: '1 mile', mi: 1 },
+  // 1.5 and 2 miles are fitness-test distances, and 3 miles is what most people
+  // actually run when they say "a few miles" — all worth trending even though
+  // nobody races them.
+  { name: '1.5 mile', mi: 1.5 },
+  { name: '2 mile', mi: 2 },
   { name: '5K', mi: 3.10686 },
+  { name: '3 mile', mi: 3 },
   { name: '10K', mi: 6.21371 },
   { name: '10 mile', mi: 10 },
   { name: 'Half marathon', mi: 13.1094 },
   { name: 'Marathon', mi: 26.2188 },
-]
+].sort((a, b) => a.mi - b.mi)
 
 /** Riegel: predict time at a new distance from a known performance. */
 export function riegel(knownSec: number, knownMi: number, targetMi: number, exp = 1.06): number {

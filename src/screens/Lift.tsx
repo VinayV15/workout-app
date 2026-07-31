@@ -26,6 +26,7 @@ import {
   SelectField,
   Sheet,
   Row,
+  Stat,
 } from '../components/ui'
 import { ChartFrame, SERIES, TargetBars, TimeSeries, niceDomain } from '../components/charts'
 import ExerciseGuide from '../components/ExerciseGuide'
@@ -34,9 +35,8 @@ import {
   bodyweightOn,
   daysBetween,
   dispWeight,
+  E1RM_MAX_REPS,
   e1rm,
-  exerciseHistory,
-  exercisePR,
   fmtDate,
   fmtDateFull,
   muscleSetVolume,
@@ -50,6 +50,16 @@ import { volumeBar, volumeTargets } from '../lib/recommend'
 import RangePicker, { useDateRange } from '../components/RangePicker'
 import { bucketFor, bucketLabel, bucketStart, withinRange } from '../lib/dateRange'
 import { pctPerWeekOverRange } from '../lib/trends'
+import {
+  metricsFor,
+  sessionSeries,
+  strengthSummary,
+  strengthTotal,
+  trackedExercises,
+  trackedMuscles,
+  type LiftMetric,
+  type Scope,
+} from '../lib/strength'
 
 type SubTab = 'log' | 'history' | 'progress' | 'volume'
 
@@ -1039,19 +1049,41 @@ function ProgressTab() {
   const units = data.profile.units
   const wu = weightUnit(units)
   const map = useMemo(() => exerciseMap(data.customExercises), [data.customExercises])
-
-  const tracked = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const w of data.workouts) for (const e of w.exercises) counts.set(e.exerciseId, (counts.get(e.exerciseId) ?? 0) + 1)
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
-  }, [data.workouts])
-
-  const [selected, setSelected] = useState<string | null>(tracked[0] ?? null)
-  const id = selected ?? tracked[0] ?? null
   const { range, resolved, setRange } = useDateRange('progress')
   const earliest = useMemo(() => [...data.workouts].map((w) => w.date).sort()[0] ?? null, [data.workouts])
 
-  if (!id) {
+  const exercises = useMemo(() => trackedExercises(data), [data])
+  const muscles = useMemo(() => trackedMuscles(data), [data])
+  const [kind, setKind] = useState<Scope['kind']>('exercise')
+  const [exerciseId, setExerciseId] = useState<string | null>(null)
+  const [muscle, setMuscle] = useState<Muscle | null>(null)
+  const [metric, setMetric] = useState<LiftMetric>('e1rm')
+
+  const scope: Scope | null =
+    kind === 'exercise'
+      ? (exerciseId ?? exercises[0])
+        ? { kind: 'exercise', id: exerciseId ?? exercises[0] }
+        : null
+      : (muscle ?? muscles[0])
+        ? { kind: 'muscle', muscle: muscle ?? muscles[0] }
+        : null
+
+  const metrics = metricsFor(kind)
+  // Switching to a muscle drops the metrics that cannot aggregate, so fall back
+  // rather than charting nothing.
+  const activeMetric = metrics.some((m) => m.key === metric) ? metric : metrics[0].key
+  const spec = metrics.find((m) => m.key === activeMetric)!
+
+  const allSeries = useMemo(() => (scope ? sessionSeries(data, scope) : []), [data, scope])
+  const series = useMemo(() => withinRange(allSeries, resolved), [allSeries, resolved])
+  const inRangeWorkouts = useMemo(() => withinRange(data.workouts, resolved), [data.workouts, resolved])
+  const summary = useMemo(() => strengthSummary(data, inRangeWorkouts), [data, inRangeWorkouts])
+  const total = useMemo(() => strengthTotal(summary), [summary])
+
+  const scopeLabel =
+    scope?.kind === 'exercise' ? (map.get(scope.id)?.name ?? scope.id) : scope ? MUSCLE_LABEL[scope.muscle] : ''
+
+  if (exercises.length === 0) {
     return (
       <Empty
         title="No exercise history yet"
@@ -1060,110 +1092,196 @@ function ProgressTab() {
     )
   }
 
-  const allHistory = exerciseHistory(id, data)
-  const history = withinRange(allHistory, resolved)
-  const pr = exercisePR(id, data)
-  // Trend over the selected window, not a fixed six weeks.
-  const trend = pctPerWeekOverRange(history, (h) => h.e1rm)
-  const chart = history.map((h) => ({
-    date: h.date,
-    e1rm: round(dispWeight(h.e1rm, units), 1),
-    volume: round(dispWeight(h.volume, units), 0),
-  }))
+  const show = (v: number) => (spec.weight ? round(dispWeight(v, units), 1) : Math.round(v))
+  const chart = series.map((p) => ({ date: p.date, value: show(p[activeMetric]) }))
+  const latest = series[series.length - 1]
+  const best = series.length ? series.reduce((b, p) => (p[activeMetric] > b[activeMetric] ? p : b)) : null
+  const trend = pctPerWeekOverRange(series, (p) => p[activeMetric])
 
   return (
     <div className="space-y-4">
       <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
 
-      <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
-        {tracked.map((t) => (
-          <Chip key={t} active={t === id} onClick={() => setSelected(t)}>
-            {map.get(t)?.name ?? t}
-          </Chip>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-3 gap-2.5">
-        <div className="card p-3">
-          <div className="text-[11px] text-ink-3">Best e1RM (all time)</div>
-          <div className="mt-1 text-xl font-semibold">
-            {round(dispWeight(pr.bestE1rm, units), 1)} <span className="text-xs text-ink-3">{wu}</span>
-          </div>
-          <div className="mt-0.5 text-[11px] text-ink-3">{pr.bestDate ? fmtDate(pr.bestDate) : '—'}</div>
-        </div>
-        <div className="card p-3">
-          <div className="text-[11px] text-ink-3">Heaviest set</div>
-          <div className="mt-1 text-xl font-semibold">
-            {round(dispWeight(pr.heaviest, units), 1)} <span className="text-xs text-ink-3">{wu}</span>
-          </div>
-          <div className="mt-0.5 text-[11px] text-ink-3">{pr.heaviestReps} reps</div>
-        </div>
-        <div className="card p-3">
-          <div className="text-[11px] text-ink-3">Trend</div>
-          <div
-            className="mt-1 text-xl font-semibold"
-            style={{ color: trend == null ? undefined : trend > 0.1 ? 'var(--delta-good)' : trend < -0.1 ? 'var(--critical)' : undefined }}
-          >
-            {trend == null ? '—' : `${trend > 0 ? '+' : ''}${round(trend, 1)}%`}
-          </div>
-          <div className="mt-0.5 text-[11px] text-ink-3">per week · {resolved.label.toLowerCase()}</div>
-        </div>
-      </div>
-
-      {chart.length >= 2 ? (
-        <>
-          <ChartFrame
-            title={`Estimated 1RM — ${map.get(id)?.name ?? ''}`}
-            sub="Calculated from your best set each session, so a heavy triple and a rep-out are directly comparable."
-            table={{
-              head: ['Date', `e1RM (${wu})`, 'Top set'],
-              rows: [...history].reverse().map((h) => [fmtDate(h.date), round(dispWeight(h.e1rm, units), 1), h.topSet]),
-            }}
-          >
-            <TimeSeries
-              data={chart}
-              xKey="date"
-              xTickFormatter={fmtDate}
-              series={[{ key: 'e1rm', label: 'Estimated 1RM', color: SERIES.s1, area: true }]}
-              yDomain={niceDomain(chart.map((c) => c.e1rm))}
-            />
-          </ChartFrame>
-
-          <ChartFrame
-            title="Session volume"
-            sub={`Total load moved per session, in ${wu}. Volume is the main driver of muscle growth.`}
-            table={{
-              head: ['Date', `Volume (${wu})`],
-              rows: [...chart].reverse().map((h) => [fmtDate(h.date), h.volume.toLocaleString()]),
-            }}
-          >
-            <TimeSeries
-              data={chart}
-              xKey="date"
-              xTickFormatter={fmtDate}
-              series={[{ key: 'volume', label: 'Volume', color: SERIES.s2, bar: true }]}
-            />
-          </ChartFrame>
-        </>
-      ) : (
+      {/* Estimated 1RM for every lift at once — one answer to "is my maximal
+          strength going up", which a single-lift chart cannot give. */}
+      {summary.length > 0 && (
         <Card>
-          <p className="text-xs text-ink-2">
-            One session logged. Log this exercise once or twice more and the progression chart appears here.
+          <SectionTitle
+            sub={`Heaviest single rep your best set implies, within ${resolved.label.toLowerCase()}`}
+          >
+            Estimated 1 rep max
+          </SectionTitle>
+          <div className="space-y-0.5">
+            {summary.slice(0, 8).map((r) => (
+              <Row
+                key={r.exerciseId}
+                label={r.name}
+                sub={`from ${r.topSet} · ${r.sessions} session${r.sessions === 1 ? '' : 's'}`}
+                value={
+                  <span className="flex items-baseline gap-2">
+                    <span>
+                      {round(dispWeight(r.currentLb, units), 1)} {wu}
+                    </span>
+                    {r.changeLb != null && Math.abs(r.changeLb) >= 0.5 && (
+                      <span
+                        className="text-[11px]"
+                        style={{ color: r.changeLb > 0 ? 'var(--delta-good)' : 'var(--critical)' }}
+                      >
+                        {r.changeLb > 0 ? '+' : ''}
+                        {round(dispWeight(r.changeLb, units), 1)}
+                      </span>
+                    )}
+                  </span>
+                }
+              />
+            ))}
+          </div>
+          {total.lifts > 1 && (
+            <div className="mt-2 flex items-baseline justify-between border-t border-line pt-2 text-sm">
+              <span className="font-medium">Total of {total.lifts} main lifts</span>
+              <span className="tabular font-medium">
+                {round(dispWeight(total.totalLb, units), 0).toLocaleString()} {wu}
+                {Math.abs(total.changeLb) >= 1 && (
+                  <span
+                    className="ml-2 text-[11px]"
+                    style={{ color: total.changeLb > 0 ? 'var(--delta-good)' : 'var(--critical)' }}
+                  >
+                    {total.changeLb > 0 ? '+' : ''}
+                    {round(dispWeight(total.changeLb, units), 0)}
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
+          <p className="mt-2.5 text-[11px] leading-relaxed text-ink-3">
+            Blended from three established formulas rather than one, because each is only reliable over part of
+            the rep range. Sets above {E1RM_MAX_REPS} reps are treated as {E1RM_MAX_REPS} — past that a set
+            measures endurance, not maximal strength.
           </p>
         </Card>
       )}
 
-      <Card>
-        <SectionTitle sub={`Sessions in ${resolved.label.toLowerCase()}, newest first`}>Session log</SectionTitle>
-        {[...history].reverse().slice(0, 24).map((h) => (
-          <Row
-            key={h.date}
-            label={fmtDate(h.date)}
-            sub={`top set ${h.topSet}`}
-            value={`${round(dispWeight(h.e1rm, units), 1)} ${wu} e1RM`}
-          />
-        ))}
-      </Card>
+      {/* Scope: one lift, or everything training one muscle. */}
+      <div className="space-y-2">
+        <Segmented
+          value={kind}
+          onChange={(k: Scope['kind']) => setKind(k)}
+          options={[
+            { value: 'exercise', label: 'By exercise' },
+            { value: 'muscle', label: 'By muscle' },
+          ]}
+        />
+        <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+          {kind === 'exercise'
+            ? exercises.map((id) => (
+                <Chip key={id} active={scope?.kind === 'exercise' && scope.id === id} onClick={() => setExerciseId(id)}>
+                  {map.get(id)?.name ?? id}
+                </Chip>
+              ))
+            : muscles.map((m) => (
+                <Chip key={m} active={scope?.kind === 'muscle' && scope.muscle === m} onClick={() => setMuscle(m)}>
+                  {MUSCLE_LABEL[m]}
+                </Chip>
+              ))}
+        </div>
+        <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+          {metrics.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setMetric(m.key)}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                activeMetric === m.key
+                  ? 'border-transparent bg-s1 text-white'
+                  : 'border-line bg-surface-2 text-ink-2 hover:text-ink'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {kind === 'muscle' && (
+          <p className="text-[11px] leading-relaxed text-ink-3">
+            Everything that trains {scopeLabel.toLowerCase()}, directly or as an assister. A 1RM is not offered here
+            because it does not add up across movements — a bench press max and a fly max do not sum to anything.
+          </p>
+        )}
+      </div>
+
+      {series.length === 0 ? (
+        <Empty
+          title="Nothing in this range"
+          body={`No ${scopeLabel} sessions in ${resolved.label.toLowerCase()}. Widen the range or choose All time.`}
+        />
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2.5">
+            <Stat
+              label="Latest"
+              value={latest ? show(latest[activeMetric]) : '—'}
+              unit={spec.weight ? wu : undefined}
+              sub={latest ? fmtDate(latest.date) : undefined}
+            />
+            <Stat
+              label="Best in range"
+              value={best ? show(best[activeMetric]) : '—'}
+              unit={spec.weight ? wu : undefined}
+              sub={best ? fmtDate(best.date) : undefined}
+            />
+            <Stat
+              label="Trend"
+              value={trend == null ? '—' : `${trend > 0 ? '+' : ''}${round(trend, 1)}%`}
+              sub={`per week · ${resolved.label.toLowerCase()}`}
+            />
+          </div>
+
+          <ChartFrame
+            title={`${spec.label} — ${scopeLabel}`}
+            sub={`${spec.sub}. One point per session.`}
+            table={{
+              head: ['Date', `${spec.label}${spec.weight ? ` (${wu})` : ''}`, ...(activeMetric === 'e1rm' ? ['From set'] : [])],
+              rows: [...series]
+                .reverse()
+                .map((p) => [fmtDate(p.date), show(p[activeMetric]), ...(activeMetric === 'e1rm' ? [p.topSet] : [])]),
+            }}
+          >
+            <TimeSeries
+              data={chart}
+              xKey="date"
+              xTickFormatter={fmtDate}
+              series={[
+                {
+                  key: 'value',
+                  label: spec.label,
+                  color: SERIES.s1,
+                  area: activeMetric === 'e1rm' || activeMetric === 'heaviest',
+                  bar: activeMetric === 'volume' || activeMetric === 'sets' || activeMetric === 'reps',
+                },
+              ]}
+              yDomain={
+                activeMetric === 'e1rm' || activeMetric === 'heaviest'
+                  ? niceDomain(chart.map((c) => c.value))
+                  : undefined
+              }
+            />
+          </ChartFrame>
+
+          <Card>
+            <SectionTitle sub={`Sessions in ${resolved.label.toLowerCase()}, newest first`}>Session log</SectionTitle>
+            {[...series].reverse().slice(0, 24).map((p) => (
+              <Row
+                key={p.date}
+                label={fmtDate(p.date)}
+                sub={
+                  scope?.kind === 'exercise'
+                    ? `top set ${p.topSet} · ${p.sets} set${p.sets === 1 ? '' : 's'}, ${p.reps} reps`
+                    : `${p.sets} set${p.sets === 1 ? '' : 's'}, ${p.reps} reps`
+                }
+                value={`${show(p[activeMetric])}${spec.weight ? ` ${wu}` : ''}`}
+              />
+            ))}
+          </Card>
+        </>
+      )}
     </div>
   )
 }

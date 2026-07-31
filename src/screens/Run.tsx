@@ -2,9 +2,16 @@ import { useMemo, useState } from 'react'
 import { getRunDraft, setRunDraft, uid, useStore } from '../lib/store'
 import RangePicker, { useDateRange } from '../components/RangePicker'
 import { bucketFor, bucketLabel, bucketStart, withinRange } from '../lib/dateRange'
+import {
+  METHOD_LABEL,
+  distanceSeries,
+  summarise,
+  volumeByPeriod,
+  type EquivalentMethod,
+} from '../lib/runDistance'
 import type { Run, RunType } from '../lib/types'
 import { HARD_RUN_TYPES, RUN_TYPE_LABEL } from '../lib/types'
-import { Button, Card, Empty, Field, Row, SectionTitle, Segmented, SelectField, Sheet, Stat } from '../components/ui'
+import { Button, Card, Chip, Empty, Field, Row, SectionTitle, Segmented, SelectField, Sheet, Stat } from '../components/ui'
 import { ChartFrame, SERIES, TimeSeries, niceDomain } from '../components/charts'
 import {
   RACE_DISTANCES,
@@ -31,7 +38,7 @@ import {
   withinDays,
 } from '../lib/calc'
 
-type SubTab = 'log' | 'history' | 'analysis'
+type SubTab = 'log' | 'history' | 'analysis' | 'distances'
 
 export default function RunScreen() {
   const [tab, setTab] = useState<SubTab>('log')
@@ -44,11 +51,13 @@ export default function RunScreen() {
           { value: 'log', label: 'Log a run' },
           { value: 'history', label: 'History' },
           { value: 'analysis', label: 'Analysis' },
+          { value: 'distances', label: 'Distances' },
         ]}
       />
       {tab === 'log' && <LogRun onSaved={() => setTab('analysis')} />}
       {tab === 'history' && <RunHistory />}
       {tab === 'analysis' && <RunAnalysis />}
+      {tab === 'distances' && <RunDistances />}
     </div>
   )
 }
@@ -594,3 +603,235 @@ function RunAnalysis() {
 }
 
 export type { Run }
+
+// ---------------------------------------------------------------------------
+// Per-distance trends
+// ---------------------------------------------------------------------------
+
+/**
+ * One distance at a time, trended from every run.
+ *
+ * The problem it solves: you have hundreds of runs and almost none of them are exactly
+ * 5K, so a chart of your 5K times has three points on it. Converting each run to an
+ * equivalent effort at the chosen distance turns all of them into one dense line.
+ */
+function RunDistances() {
+  const { data } = useStore()
+  const units = data.profile.units
+  const du = distanceUnit(units)
+  const paceFactor = units === 'metric' ? 0.621371192 : 1
+  const { range, resolved, setRange } = useDateRange('run')
+  const earliest = useMemo(() => [...data.runs].map((r) => r.date).sort()[0] ?? null, [data.runs])
+
+  const [targetMi, setTargetMi] = useState(RACE_DISTANCES[0].mi)
+  const [custom, setCustom] = useState('')
+  const [method, setMethod] = useState<EquivalentMethod>('pace')
+
+  const runs = useMemo(() => withinRange(data.runs, resolved), [data.runs, resolved])
+  const series = useMemo(() => distanceSeries(runs, targetMi, method), [runs, targetMi, method])
+  const stats = useMemo(() => summarise(series), [series])
+
+  const bucket = bucketFor(resolved, earliest ? Math.abs(daysBetween(earliest, todayISO())) + 1 : 90)
+  const volume = useMemo(() => volumeByPeriod(runs, (iso) => bucketStart(iso, bucket)), [runs, bucket])
+
+  if (data.runs.length === 0) {
+    return (
+      <Empty
+        title="No runs logged"
+        body="Log a few runs at any distance and this tab will trend your time and pace at whichever distance you pick — every run counts toward it, not just the ones at that exact distance."
+      />
+    )
+  }
+
+  const name = RACE_DISTANCES.find((d) => Math.abs(d.mi - targetMi) < 0.001)?.name ?? `${round(dispDistance(targetMi, units), 2)} ${du}`
+  const chart = series.map((p) => ({
+    date: p.date,
+    seconds: Math.round(p.seconds),
+    pace: Math.round(p.paceSecPerMi * paceFactor),
+  }))
+
+  return (
+    <div className="space-y-4">
+      <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+
+      <Card className="space-y-3">
+        <SectionTitle sub="Every run is converted to this distance, so the trend uses all of them">
+          Distance
+        </SectionTitle>
+        <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+          {RACE_DISTANCES.map((d) => (
+            <Chip
+              key={d.name}
+              active={Math.abs(d.mi - targetMi) < 0.001}
+              onClick={() => {
+                setTargetMi(d.mi)
+                setCustom('')
+              }}
+            >
+              {d.name}
+            </Chip>
+          ))}
+        </div>
+        <Field
+          label={`Or any distance you like (${du})`}
+          type="number"
+          inputMode="decimal"
+          step="0.1"
+          className="w-44"
+          value={custom}
+          onChange={(e) => {
+            setCustom(e.target.value)
+            const v = Number(e.target.value)
+            if (v > 0) setTargetMi(storeDistance(v, units))
+          }}
+        />
+        <div>
+          <span className="label">How to convert</span>
+          <Segmented
+            value={method}
+            onChange={(m: EquivalentMethod) => setMethod(m)}
+            options={[
+              { value: 'pace', label: METHOD_LABEL.pace },
+              { value: 'riegel', label: METHOD_LABEL.riegel },
+            ]}
+          />
+          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-3">
+            {method === 'pace' ? (
+              <>
+                Holds each run&rsquo;s average pace and scales it to {name}: 2 {du} in 20:00 is a 10:00 pace, so it
+                reports a 10:00 mile and a 30:00 three-miler. Not a race prediction — you would run a mile faster
+                than your 2-mile pace — but the distortion is the same for every run, so the{' '}
+                <span className="text-ink">trend and your improvement are exact</span>.
+              </>
+            ) : (
+              <>
+                Applies the standard endurance exponent, so longer distances come out slower than pure pace
+                scaling. Use this when the number itself matters — what you could actually run today — rather
+                than the shape of the trend.
+              </>
+            )}
+          </p>
+        </div>
+      </Card>
+
+      {series.length === 0 ? (
+        <Empty title="No runs in this range" body="Widen the date range or choose All time." />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <Stat
+              label={`${name} now`}
+              value={stats.latest ? fmtDuration(stats.latest.seconds) : '—'}
+              sub={stats.latest ? fmtDate(stats.latest.date) : undefined}
+            />
+            <Stat
+              label="Best in range"
+              value={stats.best ? fmtDuration(stats.best.seconds) : '—'}
+              sub={stats.best ? fmtDate(stats.best.date) : undefined}
+            />
+            <Stat
+              label="Change"
+              value={stats.changeSec == null ? '—' : `${stats.changeSec < 0 ? '−' : '+'}${fmtDuration(Math.abs(stats.changeSec))}`}
+              // Faster is a smaller time, so a negative change is the good direction.
+              deltaGood={stats.changeSec == null ? undefined : stats.changeSec < 0}
+              delta={stats.changeSec == null ? undefined : stats.changeSec < 0 ? 'faster' : 'slower'}
+              sub="first to last"
+            />
+            <Stat
+              label="Runs used"
+              value={stats.total}
+              sub={`${stats.actualCount} actually at ${name}`}
+            />
+          </div>
+
+          <ChartFrame
+            title={`Equivalent ${name} time`}
+            sub={`Lower is faster. Every run in range converted to ${name}${stats.actualCount > 0 ? `; ${stats.actualCount} of them were run at that distance` : ''}.`}
+            table={{
+              head: ['Date', `Actual run (${du})`, `Equivalent ${name}`, 'At this distance'],
+              rows: [...series].reverse().map((p) => [
+                fmtDate(p.date),
+                round(dispDistance(p.run.distanceMi, units), 2),
+                fmtDuration(p.seconds),
+                p.actual ? 'yes' : '',
+              ]),
+            }}
+          >
+            <TimeSeries
+              data={chart}
+              xKey="date"
+              xTickFormatter={fmtDate}
+              yTickFormatter={(v) => fmtDuration(v)}
+              tooltipFormatter={(v) => [fmtDuration(v), name]}
+              series={[{ key: 'seconds', label: `Equivalent ${name}`, color: SERIES.s1, area: true }]}
+              yDomain={niceDomain(chart.map((c) => c.seconds))}
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title={`Pace (/${du})`}
+            sub="Your actual pace on each run. Distance-independent, so every run is directly comparable."
+            table={{
+              head: ['Date', `Pace (/${du})`],
+              rows: [...chart].reverse().map((c) => [fmtDate(c.date), fmtDuration(c.pace)]),
+            }}
+          >
+            <TimeSeries
+              data={chart}
+              xKey="date"
+              xTickFormatter={fmtDate}
+              yTickFormatter={(v) => fmtDuration(v)}
+              tooltipFormatter={(v) => [`${fmtDuration(v)}/${du}`, 'Pace']}
+              series={[{ key: 'pace', label: 'Pace', color: SERIES.s3, area: true }]}
+              yDomain={niceDomain(chart.map((c) => c.pace))}
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title={`Volume per ${bucket}`}
+            sub="Distance covered and time spent. Time is the honest measure of load when paces vary — an easy hour and a hard hour cost the same time but very different distance."
+            legend={[
+              { label: `Distance (${du})`, color: SERIES.s1 },
+              { label: 'Hours', color: SERIES.s4 },
+            ]}
+            table={{
+              head: [bucketLabel(bucket), `Distance (${du})`, 'Time', 'Runs'],
+              rows: [...volume].reverse().map((v) => [
+                fmtDate(v.period),
+                round(dispDistance(v.miles, units), 1),
+                fmtDuration(v.seconds),
+                v.runs,
+              ]),
+            }}
+          >
+            <TimeSeries
+              data={volume.map((v) => ({
+                period: v.period,
+                distance: round(dispDistance(v.miles, units), 1),
+                hours: round(v.seconds / 3600, 2),
+              }))}
+              xKey="period"
+              xTickFormatter={fmtDate}
+              series={[
+                { key: 'distance', label: `Distance (${du})`, color: SERIES.s1, bar: true },
+                { key: 'hours', label: 'Hours', color: SERIES.s4 },
+              ]}
+            />
+          </ChartFrame>
+
+          <Card>
+            <SectionTitle sub={`Every run in range, converted to ${name}`}>Runs</SectionTitle>
+            {[...series].reverse().slice(0, 24).map((p) => (
+              <Row
+                key={p.run.id}
+                label={fmtDate(p.date)}
+                sub={`${round(dispDistance(p.run.distanceMi, units), 2)} ${du} in ${fmtDuration(p.run.seconds)}${p.actual ? ` · at ${name}` : ''}`}
+                value={fmtDuration(p.seconds)}
+              />
+            ))}
+          </Card>
+        </>
+      )}
+    </div>
+  )
+}

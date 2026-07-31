@@ -210,9 +210,9 @@ reps, load, RPE and warm-ups; the previous session's sets are shown on every car
 Templates pre-fill a session, **Repeat last session** pre-fills the numbers too, and the in-progress session is
 saved continuously so a locked phone never loses your work.
 
-Progression is tracked as **estimated 1RM** (Epley) from your best set each session, so a heavy triple and a
-set of ten are directly comparable, alongside per-session tonnage and a six-week trend. Beat a best and the
-session says so when you save it.
+Progression is tracked as **estimated 1RM** from your best set each session, so a heavy triple and a set of
+ten are directly comparable, alongside per-session tonnage and a six-week trend. Beat a best and the session
+says so when you save it.
 
 ### How to enter a load
 
@@ -298,6 +298,35 @@ along a spine. Movements defined by spinal flexion — the cable crunch, the ab-
 rollout — get the written cues and say plainly why there is no picture, rather than
 showing a figure that is quietly wrong about the one thing you are trying to learn.
 
+### Trends for one lift, or one whole muscle
+
+*Lift → Progress* opens on **estimated 1 rep max** for every benchmark lift at once — what each one is now,
+how much it has moved over the range, the set the estimate came from, and a combined **total** of the big
+compounds. That total is the single number for "is my maximal strength going up", which no individual chart
+answers: a lift can stall for a month while the others climb.
+
+The estimate blends **three** formulas rather than trusting one, because each is only reliable over part of
+the rep range — Epley is good in the middle, Brzycki is sharper at low reps and absurd at high ones (it would
+claim 2.1x bodyweight off a 20-rep set), and Lombardi holds up longest. Brzycki's share fades out smoothly
+between 6 and 12 reps, and sets above **20 reps are treated as 20**, because past that a set is measuring
+endurance rather than maximal strength. The blend is asserted to be monotonic in both directions: more reps at
+the same weight, or more weight at the same reps, must always estimate higher. A single formula capped at 12
+reps failed that — every set past 12 scored identically, so a high-rep trainee could not see strength improve
+at all.
+
+Below the summary, pick **any** exercise or **any** muscle and chart it:
+
+- **By exercise** — estimated 1RM, heaviest set actually loaded, volume, total reps, working sets.
+- **By muscle** — volume, reps and sets across everything that trains it, directly or as an assister, counted
+  the same way the weekly set targets count it.
+
+The metric list changes with the scope on purpose. A 1RM is meaningful for one movement and meaningless summed
+across several — a bench max and a fly max do not add up to anything — so it is not offered by muscle, rather
+than offered and quietly wrong. Volume, reps and sets do add up, so they are.
+
+Each chart is backed by a session log: the date, the top set, sets and reps, and the metric. Every number on
+the screen can be traced to a session you actually logged.
+
 ### Date ranges
 
 Every chart, table and trend read-out has a range picker, defaulting to the **last 90
@@ -350,6 +379,29 @@ when you need longer and a tap to dismiss. It buzzes on completion where the bro
 pace, weekly distance, best time at every standard distance, **Riegel** predictions for the distances you
 have not raced, **VDOT** from your best effort and the five training paces that follow from it, plus the
 **acute-to-chronic workload ratio** for injury risk and your easy/hard intensity split.
+
+### Trends for a distance you did not run
+
+The problem: you have logged a hundred runs and almost none of them are exactly 5K, so a chart of "my 5K
+times" has three points on it and no trend. *Run → Distances* converts **every** run in range to an equivalent
+effort at the distance you pick — the standard race distances, the fitness-test distances (1, 1.5, 2, 3 miles),
+or any number you type — and charts all of them.
+
+Two conversions, and the difference matters:
+
+- **Same pace** (default) — holds that run's average pace and scales it. 2 miles in 20:00 is a 10:00 pace, so
+  it reports a 10:00 mile and a 30:00 three-miler. This is *not* a race prediction; nobody runs a marathon at
+  mile pace. What it is exactly right for is the **trend**: the distortion for a given distance is identical
+  for every run, so the line moves only when your pace does, and your improvement is exact.
+- **Riegel adjusted** — the standard endurance exponent, so longer distances come out slower than pure pace
+  scaling. Use it when the number itself is the question: what could I actually run today.
+
+Runs that were genuinely at the distance (within 4%) are marked as such in the chart and the list, and counted
+in the header — so a converted point from a 400m sprint is never mistaken for a real marathon time. Alongside
+the equivalent-time chart are **pace per mile** (distance-independent, so every run is directly comparable) and
+**volume per period** carrying both distance covered and **time spent**. Time is the honest measure of load
+when paces vary: an easy hour and a hard hour cost the same hour and very different mileage, and only one of
+those shows up as miles.
 
 **Body.** Weight, body fat (entered, or estimated from waist/neck/hips with the **US Navy** formula), BMI,
 lean mass, fat mass, nine tape measurements and resting HR. Rate of change is a regression fitted through all
@@ -503,7 +555,8 @@ way, a rest day wins when the fatigue markers say so.
 
 | Quantity | Method |
 | --- | --- |
-| Estimated 1RM | Epley, capped at 12 reps |
+| Estimated 1RM | Blend of Epley, Brzycki (fading out 6-12 reps) and Lombardi; sets over 20 reps treated as 20 |
+| Equivalent time at another distance | Average pace scaled to the distance, or Riegel |
 | Set volume | Direct muscles 1.0 per set, assisting muscles 0.5 |
 | Weekly set targets | Goal-scaled landmarks, then capped to what your training days can hold |
 | Load progression | Double progression on the lowest rep count across top sets; 5 lb compound / 2.5 lb isolation |
@@ -535,6 +588,8 @@ src/lib/program.ts     training blocks: rotation, double progression, deloads, p
 src/lib/gym.ts         plate math, warm-up ramps, rest durations, PR detection
 src/lib/dateRange.ts   range presets, resolution, bucketing, per-screen persistence
 src/lib/trends.ts      trend fits over a chosen range (calc.ts holds the coach's fixed ones)
+src/lib/strength.ts    per-exercise and per-muscle series, the 1RM summary and the total
+src/lib/runDistance.ts every run converted to one distance, plus running volume
 src/lib/pose.ts        posing the figure: joint angles, rigid segments, anchoring
 src/lib/exercisePoses.ts   movement archetypes, 2-4 positions each
 src/lib/exerciseGuide.ts   per-exercise cues, steps and mistakes
@@ -557,6 +612,7 @@ scripts/test-range.mjs     range boundaries, month lengths, leap years, bucketin
 scripts/test-pose.mjs      joint conventions, segment rigging, diagram physics
 scripts/solve-poses.mjs    derives pose angles from target joint positions (npm run solve:poses)
 scripts/test-program.mjs   block rotation, progression arithmetic and deloads
+scripts/test-analysis.mjs  the 1RM blend, distance conversion, per-exercise series
 scripts/test-physique.mjs  physique model + mesh tests
 src/components/        UI primitives and chart wrappers
 src/screens/           Today, Lift, Run, Body, Coach (Plan + Advice), Settings, Onboarding
