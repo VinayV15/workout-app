@@ -127,8 +127,9 @@ integration to a project you already set up by hand is a no-op rather than an er
 5. Choose **Create account**, enter your email and a password, and you are signed in.
 
 On any other device, the app opens on a sign-in screen: sign in and your history is pulled down before the
-app opens. Bake the project credentials into the build (see `.env.example`) and that is the whole setup on a
-new device — otherwise you paste the URL and key first, in Settings.
+app opens. Nothing else to set up — this repository commits its own project in `.env.production`, so the
+deployed app already knows where to sync. Point a fork elsewhere with `.env.local` or a repository variable
+(see `.env.example`).
 
 After that it is automatic: a few seconds after you log something, and whenever the app is reopened or comes
 back online. There is a *Sync now* button and a last-synced line if you want to check.

@@ -29,12 +29,27 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build
+      # The project to sync against is committed in .env.production. Repository
+      # variables of the same name override it, so a fork can retarget without
+      # editing the file.
+      #
+      # They cannot simply be passed through `env:`, which was the earlier bug:
+      # an unset repository variable interpolates to an empty string, and an
+      # empty shell variable takes precedence over the .env file — so the
+      # committed default was silently replaced with nothing and the deployed app
+      # came up with sync switched off.
+      - name: Build
         env:
-          # Optional — set these as repository variables to bake the sync project
-          # into the build. Leave them unset and sync is configured in-app instead.
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          REPO_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          REPO_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$REPO_SUPABASE_URL" ]; then
+            export VITE_SUPABASE_URL="$REPO_SUPABASE_URL"
+          fi
+          if [ -n "$REPO_SUPABASE_ANON_KEY" ]; then
+            export VITE_SUPABASE_ANON_KEY="$REPO_SUPABASE_ANON_KEY"
+          fi
+          npm run build
       # Pages must already be enabled for the repository, with its source set to
       # "GitHub Actions" (Settings -> Pages). The `enablement: true` option looks
       # like it would remove that step, but the workflow's own token is not
