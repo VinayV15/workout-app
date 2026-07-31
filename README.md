@@ -235,6 +235,49 @@ quietly become wrong together.
 **Warm up** on any exercise card generates a ramp to your top set — three sets at roughly 40/60/80%, descending
 in reps, snapped to loads the plates can make and marked as warm-ups so they never count toward volume.
 
+### How to perform every exercise
+
+Every exercise in the library has a guide behind a **?** — on each row of the
+add-exercise list, and on the exercise card while you are logging, so a form
+question is answerable mid-set. Each one has a summary, setup, numbered execution
+steps, short cues, and the common mistakes that actually cost people results or
+joints.
+
+The movement is drawn as **2–4 positions** on the same wireframe figure as the
+Physique tab, muscles coloured by group with the ones this lift trains lit up —
+brightest for the primary movers, dimmed for the assistors, near-background for
+everything else. Tap a position to enlarge and rotate it.
+
+Nothing is a stored image. The figure is posed procedurally by rigid segment
+transforms: the bellies are built once in the rest pose, then each is moved by the
+transform of the bone it sits on. That works because the muscle layer already
+anchors every limb belly between two joints, so a belly and its bone agree on where
+they are — and it means 40-odd movement archetypes cover all 59 exercises with no
+model files and nothing to license, exactly like the physique model.
+
+Three things were worth getting right, and each was wrong first:
+
+- **Joint signs.** Every limb hangs *below* its joint, so the rotation that carries
+  a point forward carries a limb backward. Flexion is forward, so those angles are
+  negated — except the knee, which travels the other way. Three of the four were
+  inverted on the first attempt, which is why `test-pose.mjs` asserts joint
+  positions rather than trusting the code to read correctly.
+- **Contact with the world.** Forward kinematics rotates limbs about a *fixed
+  pelvis*, so bending the hips and knees for a squat sends the feet into the air
+  instead of dropping the hips. Poses are anchored afterwards: `feet` drops the
+  figure onto the floor, `hands` hangs it from the bar so a pull-up's grip stays put
+  while the body moves beneath it.
+- **The skeleton is not decoration.** Every belly tapers to nothing at its joint, so
+  posed limbs made of muscle alone read as a row of detached strips — the first
+  version looked more like a bird than someone benching. Bones span the joints and
+  give the figure its structure.
+
+**What it does not do:** the torso is one rigid segment. It tilts and lies flat but
+it cannot *curl*, because the torso bellies sit at absolute heights rather than
+along a spine. Movements defined by spinal flexion — the cable crunch, the ab-wheel
+rollout — get the written cues and say plainly why there is no picture, rather than
+showing a figure that is quietly wrong about the one thing you are trying to learn.
+
 ### Rest between sets
 
 Configured under *Settings → In the gym*, three ways:
@@ -435,6 +478,10 @@ src/lib/calc.ts        all the sports-science math (1RM, VDOT, ACWR, Navy BF, TD
 src/lib/recommend.ts   the coaching engine and volume targets
 src/lib/program.ts     training blocks: rotation, double progression, deloads, presets
 src/lib/gym.ts         plate math, warm-up ramps, rest durations, PR detection
+src/lib/pose.ts        posing the figure: joint angles, rigid segments, anchoring
+src/lib/exercisePoses.ts   movement archetypes, 2-4 positions each
+src/lib/exerciseGuide.ts   per-exercise cues, steps and mistakes
+src/components/ExerciseGuide.tsx  the how-to sheet
 src/lib/store.tsx      on-device persistence, change tracking, backup and restore
 src/lib/physique.ts    measurements -> the three body shells (frame / lean / full)
 src/lib/bodyMesh.ts    the smooth outer shell (the fat layer)
@@ -449,6 +496,7 @@ supabase/migrations/    the table and security policy sync needs, as a migration
 scripts/test-sync.mjs  sync merge tests (npm test)
 scripts/test-coach.mjs     fatigue, load accounting, units and CSV escaping
 scripts/test-gym.mjs       plate math, warm-up ramps, rest durations, PR detection
+scripts/test-pose.mjs      joint conventions, segment rigging, guide coverage
 scripts/test-program.mjs   block rotation, progression arithmetic and deloads
 scripts/test-physique.mjs  physique model + mesh tests
 src/components/        UI primitives and chart wrappers

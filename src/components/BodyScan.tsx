@@ -47,14 +47,36 @@ export default function BodyScan({
   view,
   onViewChange,
   height = 420,
+  fit,
+  interactive = true,
+  hint,
 }: {
   shells: ShellSpec[]
   view: PresetView
   onViewChange?: (v: PresetView) => void
   height?: number
+  /**
+   * Explicit framing, overriding the height-based default. The exercise diagrams
+   * need every frame of a movement framed identically — a posed figure is shorter
+   * than a standing one, and framing each pose to its own extents makes the body
+   * jump size between frames.
+   */
+  fit?: { centreY: number; radius: number }
+  /**
+   * False for a thumbnail: no orbit, no zoom, no cursor. A strip of small frames
+   * should scroll the page under a finger rather than each one grabbing the drag.
+   */
+  interactive?: boolean
+  /** Overrides the drag/zoom hint. Empty string hides it. */
+  hint?: string
 }) {
   const mountRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  // Read inside the setup effect, which runs once — a ref keeps it out of the
+  // dependency list without the effect going stale on a value that never changes
+  // for a given mounted canvas.
+  const interactiveRef = useRef(interactive)
+  interactiveRef.current = interactive
 
   // The three.js objects live outside React state: they are mutable, and
   // recreating them on every render would be both wrong and slow.
@@ -70,6 +92,8 @@ export default function BodyScan({
     polar: number
     distance: number
     target: number
+    fitRadius: number | null
+    applyFit: () => void
     dispose: () => void
   } | null>(null)
 
@@ -106,7 +130,27 @@ export default function BodyScan({
           polar: Math.PI / 2,
           distance: 200,
           target: 0,
+          /** Radius to frame, when the caller supplied explicit framing. */
+          fitRadius: null as number | null,
+          applyFit: () => {},
           dispose: () => {},
+        }
+
+        /**
+         * Distance that fits a sphere of `fitRadius` in BOTH axes.
+         *
+         * Fitting on height alone is wrong the moment the subject is wider than it
+         * is tall, which a lying-down figure always is: in a portrait frame the
+         * horizontal field of view is the narrow one, so the body has to be pushed
+         * further back than the vertical calculation suggests. Getting this wrong
+         * rendered a bench press as a distant speck.
+         */
+        state.applyFit = () => {
+          if (state.fitRadius == null) return
+          const halfV = Math.tan(((camera.fov / 2) * Math.PI) / 180)
+          const halfH = halfV * Math.max(camera.aspect, 0.01)
+          // A small margin so nothing clips the edge as the figure rotates.
+          state.distance = Math.max(30, (state.fitRadius / Math.min(halfV, halfH)) * 1.08)
         }
 
         let frame = 0
@@ -168,19 +212,28 @@ export default function BodyScan({
         }
 
         const el = renderer.domElement
-        el.style.touchAction = 'none'
-        el.style.cursor = 'grab'
-        el.addEventListener('pointerdown', onDown)
-        el.addEventListener('pointermove', onMove)
-        el.addEventListener('pointerup', onUp)
-        el.addEventListener('pointercancel', onUp)
-        el.addEventListener('wheel', onWheel, { passive: false })
+        // A static thumbnail must not capture the drag, or scrolling a strip of
+        // frames on a phone rotates a figure instead of moving the page.
+        if (interactiveRef.current) {
+          el.style.touchAction = 'none'
+          el.style.cursor = 'grab'
+          el.addEventListener('pointerdown', onDown)
+          el.addEventListener('pointermove', onMove)
+          el.addEventListener('pointerup', onUp)
+          el.addEventListener('pointercancel', onUp)
+          el.addEventListener('wheel', onWheel, { passive: false })
+        } else {
+          el.style.pointerEvents = 'none'
+        }
 
         const onResize = () => {
           if (!mount.clientWidth) return
           renderer.setSize(mount.clientWidth, mount.clientHeight)
           camera.aspect = mount.clientWidth / mount.clientHeight
           camera.updateProjectionMatrix()
+          // The aspect just changed, so the fitted distance has to be re-derived —
+          // otherwise rotating a phone leaves the figure cropped or tiny.
+          state.applyFit()
         }
         const observer = new ResizeObserver(onResize)
         observer.observe(mount)
@@ -313,9 +366,18 @@ export default function BodyScan({
     // visible height at the subject is 2·d·tan(15°) ≈ 0.536·d, so this distance
     // leaves a small margin above the head and below the feet.
     group.position.set(0, 0, 0)
-    state.target = tallest / 2
-    state.distance = tallest * 2.15
-  }, [shells, status])
+    if (fit) {
+      // Explicit framing: the caller has measured the geometry, usually across
+      // several poses at once so they all sit at the same scale.
+      state.target = fit.centreY
+      state.fitRadius = fit.radius
+      state.applyFit()
+    } else {
+      state.fitRadius = null
+      state.target = tallest / 2
+      state.distance = tallest * 2.15
+    }
+  }, [shells, status, fit])
 
   // --- Preset views -----------------------------------------------------
   useEffect(() => {
@@ -340,9 +402,11 @@ export default function BodyScan({
 
       {status === 'ready' && (
         <>
-          <div className="pointer-events-none absolute top-3 left-3 text-[10px] tracking-wider text-ink-3 uppercase">
-            Drag to rotate · pinch or scroll to zoom
-          </div>
+          {(hint ?? 'Drag to rotate · pinch or scroll to zoom') !== '' && (
+            <div className="pointer-events-none absolute top-3 left-3 text-[10px] tracking-wider text-ink-3 uppercase">
+              {hint ?? 'Drag to rotate · pinch or scroll to zoom'}
+            </div>
+          )}
           {onViewChange && (
             <div className="absolute right-3 bottom-3 flex gap-1">
               {(['front', 'side', 'back', 'threequarter'] as PresetView[]).map((v) => (

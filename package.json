@@ -9,11 +9,12 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:sync && npm run test:coach && npm run test:gym && npm run test:program && npm run test:physique",
+    "test": "npm run test:sync && npm run test:coach && npm run test:gym && npm run test:program && npm run test:pose && npm run test:physique",
     "test:sync": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-sync.mjs",
     "test:coach": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-coach.mjs",
     "test:gym": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-gym.mjs",
     "test:program": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-program.mjs",
+    "test:pose": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-pose.mjs",
     "test:physique": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-physique.mjs",
     "icons": "node scripts/make-icons.mjs"
   },

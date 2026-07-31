@@ -28,6 +28,8 @@ import {
   Row,
 } from '../components/ui'
 import { ChartFrame, SERIES, TargetBars, TimeSeries, niceDomain } from '../components/charts'
+import ExerciseGuide from '../components/ExerciseGuide'
+import { guideFor } from '../lib/exerciseGuide'
 import {
   addDays,
   bodyweightOn,
@@ -415,6 +417,7 @@ function ExerciseCard({
   const isTime = exercise?.loadType === 'time'
   const isBw = exercise?.loadType === 'bodyweight' || exercise?.loadType === 'weighted_bodyweight'
   const [restEnd, setRestEnd] = useState<number | null>(null)
+  const [guideOpen, setGuideOpen] = useState(false)
 
   const restSec = restSecondsFor(profile, exercise)
   const barLb = profile.barWeightLb ?? DEFAULT_BAR_LB
@@ -488,10 +491,27 @@ function ExerciseCard({
               downstream — and nothing else in the app would flag it. */}
           {!isTime && <p className="mt-0.5 text-[11px] text-ink-3">Enter {weightConvention(exercise)}.</p>}
         </div>
-        <button onClick={onRemove} className="shrink-0 rounded-lg px-2 py-1 text-xs text-ink-3 hover:text-critical">
-          Remove
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {/* Reachable mid-set, which is when a form question actually comes up. */}
+          {exercise && guideFor(exercise.id) && (
+            <button
+              onClick={() => setGuideOpen(true)}
+              className="rounded-full border border-line px-2 py-1 text-[11px] text-ink-3 hover:text-ink"
+              aria-label={`How to perform ${exercise.name}`}
+              title="How to perform this exercise"
+            >
+              ?
+            </button>
+          )}
+          <button onClick={onRemove} className="rounded-lg px-2 py-1 text-xs text-ink-3 hover:text-critical">
+            Remove
+          </button>
+        </div>
       </div>
+
+      {exercise && guideOpen && (
+        <ExerciseGuide exercise={exercise} open onClose={() => setGuideOpen(false)} />
+      )}
 
       {lastSession && (
         <div className="rounded-lg bg-surface-2 px-2.5 py-2 text-[11px] text-ink-2">
@@ -720,6 +740,7 @@ function ExercisePicker({
   const [query, setQuery] = useState('')
   const [muscle, setMuscle] = useState<Muscle | 'all'>('all')
   const [creating, setCreating] = useState(false)
+  const [guideExercise, setGuideFor] = useState<Exercise | null>(null)
   const list = useMemo(() => allExercises(data.customExercises), [data.customExercises])
 
   const filtered = list.filter((e) => {
@@ -749,17 +770,27 @@ function ExercisePicker({
         </div>
         <div className="space-y-1">
           {filtered.map((e) => (
-            <button
-              key={e.id}
-              onClick={() => onPick(e.id)}
-              className="w-full rounded-xl px-3 py-2.5 text-left transition hover:bg-surface-2"
-            >
-              <div className="text-sm">{e.name}</div>
-              <div className="text-[11px] text-ink-3">
-                {e.primary.map((m) => MUSCLE_LABEL[m]).join(', ')}
-                {e.secondary.length > 0 && ` · ${e.secondary.map((m) => MUSCLE_LABEL[m]).join(', ')}`}
-              </div>
-            </button>
+            <div key={e.id} className="flex items-center gap-1 rounded-xl transition hover:bg-surface-2">
+              <button onClick={() => onPick(e.id)} className="min-w-0 flex-1 px-3 py-2.5 text-left">
+                <div className="text-sm">{e.name}</div>
+                <div className="text-[11px] text-ink-3">
+                  {e.primary.map((m) => MUSCLE_LABEL[m]).join(', ')}
+                  {e.secondary.length > 0 && ` · ${e.secondary.map((m) => MUSCLE_LABEL[m]).join(', ')}`}
+                </div>
+              </button>
+              {/* Separate from the row so choosing an exercise and reading how to do
+                  it are different taps — tapping the name should still just add it. */}
+              {guideFor(e.id) && (
+                <button
+                  onClick={() => setGuideFor(e)}
+                  className="mr-1.5 shrink-0 rounded-full border border-line px-2 py-1 text-[11px] text-ink-3 hover:text-ink"
+                  aria-label={`How to perform ${e.name}`}
+                  title={`How to perform ${e.name}`}
+                >
+                  ?
+                </button>
+              )}
+            </div>
           ))}
           {filtered.length === 0 && <p className="px-1 py-4 text-xs text-ink-3">No match.</p>}
         </div>
@@ -780,6 +811,10 @@ function ExercisePicker({
           </Button>
         )}
       </div>
+
+      {guideExercise && (
+        <ExerciseGuide exercise={guideExercise} open onClose={() => setGuideFor(null)} />
+      )}
     </Sheet>
   )
 }

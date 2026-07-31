@@ -1,4 +1,5 @@
 import { LEVELS, type BodyDims } from './physique'
+import type { Muscle } from './types'
 import {
   add,
   bodyFrame,
@@ -624,6 +625,33 @@ export const MUSCLE_GROUPS: MuscleGroup[] = [
   { key: 'calves', label: 'Calves', color: 0x1f9e3f, match: ['gastrocnemius', 'soleus', 'tibialis'] },
   { key: 'neck', label: 'Neck', color: 0xd55181, match: ['sternocleidomastoid'] },
 ]
+
+/**
+ * Which bellies each *tracked* muscle group is drawn from.
+ *
+ * The app tracks twelve groups for volume purposes; the mesh has thirty-nine
+ * bellies. This is the bridge, so an exercise's `primary` and `secondary` lists can
+ * light up the muscles it actually works on the diagram.
+ */
+export const MUSCLE_BELLIES: Record<Muscle, string[]> = {
+  chest: ['pectoral'],
+  lats: ['latissimus'],
+  upper_back: ['trapezius', 'erector'],
+  shoulders: ['deltoid-anterior', 'deltoid-lateral'],
+  rear_delts: ['deltoid-posterior'],
+  biceps: ['biceps-long', 'biceps-short', 'brachioradialis'],
+  triceps: ['triceps'],
+  quads: ['rectus-femoris', 'vastus'],
+  hamstrings: ['biceps-femoris', 'semitendinosus', 'adductor'],
+  glutes: ['gluteus'],
+  calves: ['gastrocnemius', 'soleus', 'tibialis'],
+  core: ['rectus-abdominis', 'oblique', 'serratus', 'lower-abdominals'],
+}
+
+/** Whether a belly belongs to one of the given tracked muscle groups. */
+export function bellyInMuscles(name: string, muscles: Muscle[]): boolean {
+  return muscles.some((m) => MUSCLE_BELLIES[m].some((frag) => name.includes(frag)))
+}
 
 /** Which group a belly belongs to, by its mesh name. */
 export function muscleGroupOf(name: string): MuscleGroup | null {
