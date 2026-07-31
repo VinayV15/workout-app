@@ -5,9 +5,6 @@ and phone, works offline, and costs nothing to run. It works with no account at 
 the device you enter it on — and optional sync keeps your devices in step through a free Supabase project
 you own.
 
-Primary goal it is tuned for: **lose fat while keeping (and adding) muscle** — but the goal is a setting, and
-every recommendation, volume target and calorie number recalculates when you change it.
-
 ---
 
 ## Running it
