@@ -241,12 +241,38 @@ console.log('\nbody mesh')
   )
   check('the head overlaps the neck', headBottom < torsoTop, `head ${headBottom.toFixed(1)} vs torso ${torsoTop.toFixed(1)}`)
 
-  // The legs must not fuse through the centreline.
+  /**
+   * The thighs DO meet at the top, and must.
+   *
+   * This used to assert the inner edges never cross the midline, which turns out to
+   * be geometrically incompatible with keeping the legs inside the pelvis: two
+   * circular thighs only fit within the hip width if the thigh radius is under about
+   * 2.9in, and a real one is 3.6in or more. The only way to satisfy the old rule was
+   * to plant the legs outside the hips — which is precisely the "legs bolted on"
+   * defect. Real adductors touch, so the overlap is right.
+   *
+   * What must still hold is that each leg stays on its own side, and that the crotch
+   * reads as a separation rather than one fused block. The torso's tuck descending
+   * between the thighs is what provides that, so it is asserted directly.
+   */
   const thighRing = byName.legR.rings.reduce((best, r) => (r.a > best.a ? r : best))
   check(
-    'the thighs do not overlap through the centreline',
-    thighRing.cx - thighRing.a > -0.01,
-    `inner edge at ${(thighRing.cx - thighRing.a).toFixed(2)}in`,
+    'each thigh stays on its own side of the body',
+    thighRing.cx > p.full.thighR * 0.25,
+    `axis at ${thighRing.cx.toFixed(2)}in`,
+  )
+  const torsoBottom = Math.min(...byName.torso.rings.map((r) => r.y))
+  const thighTop = Math.max(...byName.legR.rings.map((r) => r.y))
+  check(
+    'the torso tucks down between the thighs to make a crotch',
+    torsoBottom < thighTop - 4,
+    `torso ends at ${torsoBottom.toFixed(1)}, thighs start at ${thighTop.toFixed(1)}`,
+  )
+  const tuck = byName.torso.rings.reduce((b, r) => (r.y < b.y ? r : b))
+  check(
+    'and that tuck is narrow, not a flat plate across the hips',
+    tuck.a < p.full.hip.a * 0.45,
+    `${tuck.a.toFixed(2)}in vs hip ${p.full.hip.a.toFixed(2)}in`,
   )
 
   // The arms must clear the torso at the waist so they read separately.
@@ -875,6 +901,59 @@ console.log('\nlegs hang from the pelvis')
 
   // And the reason the old code failed: placement must follow the pelvis, not the
   // thigh. Doubling thigh girth on fixed hips must not push the leg outward.
+  /**
+   * The junction with the pelvis, on the SURFACE layer.
+   *
+   * The shell kept a private copy of the leg placement and it drifted, so correcting
+   * the muscle and skeleton layers left the outer shell's legs planted 2-3in outside
+   * the pelvis. The tube caps sat in plain silhouette and the legs read as dowels
+   * pressed into a flat-bottomed torso. The junction is overlap-and-hide, so two
+   * things have to hold, and neither is visible to a typechecker.
+   */
+  for (const [label, input] of BODIES) {
+    const ph = computePhysique(input)
+    const chains = buildChains(ph.full)
+    const torso = chains.find((c) => c.name === 'torso')
+    const leg = chains.find((c) => c.name === 'legR')
+    const H = ph.full.heightIn
+    const torsoWidest = Math.max(...torso.rings.map((r) => r.cx + r.a))
+    const torsoAt = (y) => torso.rings.reduce((b, r) => (!b || Math.abs(r.y - y) < Math.abs(b.y - y) ? r : b), null)
+
+    // 1. The topmost ring must be enclosed, or its cap is drawn in mid-air.
+    const top = leg.rings.reduce((b, r) => (r.y > b.y ? r : b), leg.rings[0])
+    const cover = torsoAt(top.y)
+    check(
+      `${label}: the top of the leg is hidden inside the pelvis`,
+      top.cx + top.a <= cover.cx + cover.a - 0.2,
+      `leg reaches ${(top.cx + top.a).toFixed(2)} vs pelvis ${(cover.cx + cover.a).toFixed(2)} at y ${top.y.toFixed(1)}`,
+    )
+
+    // 2. Above the crotch the silhouette must never step OUTWARD from pelvis to
+    //    thigh. A step is the seam, however much the parts overlap vertically.
+    const above = leg.rings.filter((r) => r.y >= LEVELS.crotch * H)
+    const worst = above.reduce((m, r) => Math.max(m, r.cx + r.a), 0)
+    check(
+      `${label}: the thigh never steps outside the widest point of the pelvis`,
+      worst <= torsoWidest + 0.02,
+      `thigh ${worst.toFixed(2)} vs pelvis ${torsoWidest.toFixed(2)}`,
+    )
+  }
+
+  // Both layers must agree on where the leg is, or they visibly separate — which is
+  // exactly what a duplicated copy of the placement maths caused.
+  for (const [label, input] of BODIES) {
+    const ph = computePhysique(input)
+    const shellHipX = buildChains(ph.full)
+      .find((c) => c.name === 'legR')
+      .rings.reduce((b, r) => (r.y > b.y ? r : b)).cx
+    const boneHipX = legPoints(ph.full, 1).hip[0]
+    check(
+      `${label}: surface and skeleton agree on the leg axis`,
+      Math.abs(shellHipX - boneHipX) < ph.full.thighR,
+      `shell ${shellHipX.toFixed(2)} vs bones ${boneHipX.toFixed(2)}`,
+    )
+  }
+
   const thin = computePhysique({ heightIn: 70, weightLb: 190, bodyFatPct: 15, sex: 'male', measured: { hips: 38, thigh: 20 } })
   const thick = computePhysique({ heightIn: 70, weightLb: 190, bodyFatPct: 15, sex: 'male', measured: { hips: 38, thigh: 30 } })
   const outerOf = (ph) => legPoints(ph.full, 1).hip[0] + ph.full.thighR

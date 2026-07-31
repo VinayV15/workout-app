@@ -1,5 +1,5 @@
 import { LEVELS, SECTION_EXPONENT, type BodyDims } from './physique'
-import { armHangX, gridsToSegments, type MeshGrid, type Vec3 } from './anatomy'
+import { armHangX, gridsToSegments, legAxisX, type MeshGrid, type Vec3 } from './anatomy'
 
 /**
  * Builds the wireframe body as rings of points.
@@ -305,24 +305,39 @@ function armChain(d: BodyDims, side: 1 | -1): Chain {
   return limbFromStops(`arm${side > 0 ? 'R' : 'L'}`, stops, H, LIMB_RINGS + 6)
 }
 
+/**
+ * How much the glute blend flares the widest thigh ring. Passed to `legAxisX` so the
+ * flare is accounted for when placing the leg, rather than discovered afterwards as a
+ * leg sticking out past the hip.
+ */
+const THIGH_TOP_FLARE = 1.04
+
 /** A leg from the hip to the ankle, plus a simple wedge foot pointing forward. */
 function legChain(d: BodyDims, side: 1 | -1): Chain {
   const H = d.heightIn
-  // Position from the thigh's own radius, not from hip width: driving it off the
-  // hip lets thick thighs overlap through the centreline, which reads as one
-  // fused block instead of two legs.
-  // 1.12 accounts for the glute blend inflating the topmost thigh ring, so the
-  // two legs just meet at the crotch rather than passing through each other.
-  const hipX = side * Math.max(d.thighR * 1.12, d.hip.a * 0.42)
-  // Legs converge slightly toward the ankles, as they actually do.
-  const ankleX = side * Math.max(d.ankleR * 1.6, d.thighR * 0.62)
+  // Shared with the muscle and skeleton layers. This used to be a local copy of the
+  // placement maths and it drifted, leaving the shell's legs 2-3in outside the pelvis
+  // after the others were corrected.
+  const { hipX, ankleX } = legAxisX(d, side, THIGH_TOP_FLARE)
   const xAt = (f: number) => hipX + (ankleX - hipX) * f
   // The vastus lateralis sweeps the outside of the thigh outward at mid-length.
   // That outward curve is what distinguishes a developed leg from a plain tube.
   const sweep = (f: number) =>
     side * d.thighR * 0.13 * Math.sin(Math.PI * Math.min(1, Math.max(0, f / 0.62)))
   const stops: Stop[] = [
-    { t: LEVELS.crotch + 0.045, r: d.thighR * 1.04, x: xAt(0) },
+    /**
+     * A tapered stub rising up INSIDE the pelvis.
+     *
+     * The junction is overlap-and-hide: the thigh runs up past the crotch and the
+     * pelvis covers its top, so the silhouette flows from hip into leg with no seam.
+     * That only works if the top of the tube actually fits inside — with a
+     * full-width flat ring up here, the cap sat in plain view and the legs read as
+     * dowels pressed into a flat-bottomed torso. Narrowing it and pulling it toward
+     * the hip joint is what tucks it away.
+     */
+    { t: LEVELS.crotch + 0.085, r: d.thighR * 0.62, x: xAt(0) * 0.82 },
+    { t: LEVELS.crotch + 0.045, r: d.thighR * 0.86, x: xAt(0) * 0.94 },
+    { t: LEVELS.crotch + 0.012, r: d.thighR * THIGH_TOP_FLARE, x: xAt(0) },
     { t: LEVELS.crotch - 0.02, r: d.thighR, x: xAt(0.1) + sweep(0.1) },
     // Widest through the upper third, then a long taper toward the knee.
     { t: LEVELS.thigh + 0.02, r: d.thighR * 0.95, x: xAt(0.24) + sweep(0.24) },

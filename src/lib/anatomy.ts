@@ -160,29 +160,40 @@ export function armPoints(d: BodyDims, side: 1 | -1) {
  */
 export const THIGH_WITHIN_HIP = 0.97
 
-/** Leg path points, matching the shell's leg chain. */
-export function legPoints(d: BodyDims, side: 1 | -1) {
-  const H = d.heightIn
-  /**
-   * Thigh placement is derived from the hip, not from the thigh.
-   *
-   * This was `max(thighR * 1.12, hip.a * 0.42)`, where the thigh term won — so the
-   * bigger the legs, the further out they were planted, with nothing tying them to
-   * the pelvis. That put the thigh's outer surface 1.3–2.9in *outside* the hips and
-   * straight through the forearm, and it got worse the heavier the body, which is
-   * backwards.
-   *
-   * Solving from the hip inward fixes both: the outer surface lands just inside the
-   * widest point of the pelvis, whatever size the thigh is.
-   */
+/**
+ * Where a leg's axis sits, at the hip and at the ankle.
+ *
+ * The single source of truth for leg placement. It has to be: the surface shell kept
+ * its own copy of this and drifted, so fixing the muscle and skeleton layers moved
+ * those and left the outer shell's legs planted 2-3in outside the pelvis — visibly
+ * bolted on, while the layers underneath had already been corrected.
+ *
+ * Placement is derived from the hip, not from the thigh. The original
+ * `max(thighR * 1.12, hip.a * 0.42)` let the thigh term win, so the bigger the legs
+ * the further out they went, with nothing tying them to the pelvis — and it got worse
+ * the heavier the body, which is backwards.
+ *
+ * `topScale` is the widest the leg gets at its very top, so callers that flare the
+ * first ring (the glute blend on the shell does) still land inside the pelvis.
+ */
+export function legAxisX(d: BodyDims, side: 1 | -1, topScale = 1): { hipX: number; ankleX: number } {
   const outer = d.hip.a * THIGH_WITHIN_HIP
   // Two thighs are wider than the pelvis on almost every body, so at the top they
   // overlap toward the midline — which is exactly what adductors do. The floor is
   // low because on genuinely thick legs the overlap is genuinely large: a 31in
   // thigh on 40in hips touches its neighbour the whole way up, and a higher floor
   // pushed the outer surface back outside the pelvis to make room.
-  const hipX = side * Math.max(d.thighR * 0.3, outer - d.thighR)
-  const ankleX = side * Math.max(d.ankleR * 1.6, d.thighR * 0.62)
+  const hipX = Math.max(d.thighR * 0.3, outer - d.thighR * topScale)
+  return {
+    hipX: side * hipX,
+    ankleX: side * Math.max(d.ankleR * 1.6, d.thighR * 0.62),
+  }
+}
+
+/** Leg path points, matching the shell's leg chain. */
+export function legPoints(d: BodyDims, side: 1 | -1) {
+  const H = d.heightIn
+  const { hipX, ankleX } = legAxisX(d, side)
   const at = (f: number) => hipX + (ankleX - hipX) * f
   return {
     hip: v(hipX, (LEVELS.crotch + 0.045) * H, 0),
