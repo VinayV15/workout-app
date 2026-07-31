@@ -11,7 +11,9 @@ import {
   bestEfforts,
   bestVdot,
   dispDistance,
+  dispElevation,
   distanceUnit,
+  elevationUnit,
   fmtDate,
   fmtDateFull,
   fmtDuration,
@@ -20,6 +22,7 @@ import {
   paceSecPerUnit,
   round,
   storeDistance,
+  storeElevation,
   todayISO,
   trainingPaces,
   weeklyMileage,
@@ -76,7 +79,7 @@ function LogRun({ onSaved }: { onSaved: () => void }) {
       seconds: seconds!,
       type,
       avgHr: hr ? Number(hr) : undefined,
-      elevationFt: elev ? Number(elev) : undefined,
+      elevationFt: elev ? storeElevation(Number(elev), units) : undefined,
       rpe: rpe ? Number(rpe) : undefined,
       note: note.trim() || undefined,
     })
@@ -158,7 +161,7 @@ function LogRun({ onSaved }: { onSaved: () => void }) {
               label="Elevation gain"
               type="number"
               inputMode="numeric"
-              suffix={units === 'metric' ? 'm' : 'ft'}
+              suffix={elevationUnit(units)}
               value={elev}
               onChange={(e) => setElev(e.target.value)}
             />
@@ -273,7 +276,12 @@ function RunHistory() {
             <Row label="Time" value={fmtDuration(selected.seconds)} />
             <Row label="Pace" value={`${fmtDuration(paceSecPerUnit(selected, units))}/${du}`} />
             {selected.avgHr && <Row label="Average HR" value={`${selected.avgHr} bpm`} />}
-            {selected.elevationFt && <Row label="Elevation" value={`${selected.elevationFt} ${units === 'metric' ? 'm' : 'ft'}`} />}
+            {selected.elevationFt && (
+              <Row
+                label="Elevation"
+                value={`${round(dispElevation(selected.elevationFt, units), 0)} ${elevationUnit(units)}`}
+              />
+            )}
             {selected.rpe && <Row label="Effort" value={`RPE ${selected.rpe}`} />}
             {selected.note && <p className="pt-2 text-xs text-ink-2 italic">{selected.note}</p>}
           </div>

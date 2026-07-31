@@ -62,6 +62,15 @@ export default function Physique() {
   /** Muscle under skin is drawn as one surface, so nothing is colour-coded. */
   const blended = showFat && showMuscle
 
+  // Built once per snapshot rather than per render: dragging the timeline slider
+  // re-renders on every pixel, and rebuilding ~60 muscle bellies each time is the
+  // difference between a smooth scrub and a stuttering one.
+  const muscleGrids = useMemo(() => (p ? buildMuscleGrids(p.lean, p.frame) : []), [p])
+  const fittedMuscles = useMemo(
+    () => (p ? fitMusclesToSurface(muscleGrids, p.lean) : []),
+    [muscleGrids, p],
+  )
+
   const shells: ShellSpec[] = useMemo(() => {
     const list: ShellSpec[] = []
     if (!p) return list
@@ -73,7 +82,7 @@ export default function Physique() {
     // definition; as fat accumulates the relief flattens and the fat curves of
     // the measured surface are what remain.
     if (showFat && showMuscle) {
-      const muscleField = sampleMuscleField(fitMusclesToSurface(buildMuscleGrids(p.lean, p.frame), p.lean))
+      const muscleField = sampleMuscleField(fittedMuscles)
       // Muscle carves the skin: ridges over bellies, grooves between them.
       let skin = applyRelief(surfaceGrids(p.full), muscleField, {
         definition,
@@ -116,7 +125,7 @@ export default function Physique() {
         })
       }
       list.push({
-        grids: fitMusclesToSurface(buildMuscleGrids(p.lean, p.frame), p.lean),
+        grids: fittedMuscles,
         heightIn: H,
         color: SHELL_COLORS.lean,
         opacity: 1,
@@ -156,7 +165,7 @@ export default function Physique() {
       colorOf: (n) => boneColorOf(n, SHELL_COLORS.frame),
     })
     return list
-  }, [p, H, showFrame, showMuscle, showFat, definition])
+  }, [p, H, showFrame, showMuscle, showFat, definition, fittedMuscles])
 
   if (!base || !range || !snapshot) {
     return (
@@ -173,7 +182,7 @@ export default function Physique() {
   const minOffset = daysBetween(todayISO(), range.from)
   const maxOffset = daysBetween(todayISO(), range.to)
   const cat = bodyFatCategory(snapshot.bodyFatPct, data.profile.sex)
-  const muscleGridCount = buildMuscleGrids(physique.lean, physique.frame).length
+  const muscleGridCount = muscleGrids.length
 
   const kindLabel =
     snapshot.kind === 'projected' ? 'Projected' : snapshot.kind === 'logged' ? 'Measured' : 'Between measurements'

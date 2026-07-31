@@ -10,7 +10,8 @@ import {
 } from 'react'
 import type { AppData, BodyEntry, Exercise, Goals, Profile, Run, Workout, WorkoutTemplate } from './types'
 import { DEFAULT_TEMPLATES } from './exercises'
-import { todayISO } from './calc'
+import { csvCell, todayISO } from './calc'
+import { setSkipRestore } from './firstRun'
 import {
   completeSignInFromUrl,
   currentUser,
@@ -27,6 +28,13 @@ import {
 
 const STORAGE_KEY = 'forge.data.v1'
 const DATA_VERSION = 1
+
+/**
+ * The in-progress session, held outside the document so a half-logged workout
+ * survives a crash without ever entering the synced history. Declared here
+ * because erasing the device has to clear it too.
+ */
+export const DRAFT_KEY = 'forge.draft.workout'
 
 /** Debounce before an edit triggers an automatic sync. */
 const AUTO_SYNC_DELAY_MS = 4000
@@ -397,6 +405,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       reset: () => {
         // Local-only: erasing this device does not delete the synced history.
+        // The draft and the first-run choice live outside the document, so they
+        // have to be cleared by hand or an "erased" device still has a workout
+        // waiting in the log and skips the restore-or-start-fresh question.
+        try {
+          localStorage.removeItem(DRAFT_KEY)
+        } catch {
+          /* storage denied — nothing to clear */
+        }
+        setSkipRestore(false)
         setData(defaultData())
       },
       sync,
@@ -417,13 +434,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
 type ListKey = 'workouts' | 'runs' | 'body' | 'customExercises' | 'templates'
 
+/** Kept in one place so a new list cannot be added to the type but missed below. */
+const LIST_KEYS: ListKey[] = ['workouts', 'runs', 'body', 'customExercises', 'templates']
+
 /**
  * Re-applies any local record that was edited while a sync was in flight. The
  * merged document is authoritative for everything else.
  */
 function reapplyLocalEdits(merged: AppData, current: AppData): AppData {
   const out: AppData = { ...merged }
-  for (const key of ['workouts', 'runs', 'body', 'customExercises', 'templates'] as ListKey[]) {
+  for (const key of LIST_KEYS) {
     const currentList = current[key] as { id: string }[]
     const mergedList = out[key] as { id: string }[]
     const next = [...mergedList]
@@ -482,18 +502,19 @@ export async function importData(file: File): Promise<AppData> {
 
 /** CSV export, for spreadsheets or moving into another tool later. */
 export function exportCsv(data: AppData) {
-  const rows: string[][] = [['type', 'date', 'name', 'field1', 'field2', 'field3', 'field4']]
+  const rows: string[][] = [['type', 'date', 'name', 'field1', 'field2', 'field3', 'field4', 'note']]
   for (const w of data.workouts) {
     for (const e of w.exercises) {
       for (const s of e.sets) {
-        rows.push(['set', w.date, e.exerciseId, String(s.reps), String(s.weight), s.rpe ? String(s.rpe) : '', s.warmup ? 'warmup' : ''])
+        rows.push(['set', w.date, e.exerciseId, String(s.reps), String(s.weight), s.rpe ? String(s.rpe) : '', s.warmup ? 'warmup' : '', w.note ?? ''])
       }
     }
   }
-  for (const r of data.runs) rows.push(['run', r.date, r.type, String(r.distanceMi), String(r.seconds), r.avgHr ? String(r.avgHr) : '', ''])
+  for (const r of data.runs) rows.push(['run', r.date, r.type, String(r.distanceMi), String(r.seconds), r.avgHr ? String(r.avgHr) : '', '', r.note ?? ''])
   for (const b of data.body)
-    rows.push(['body', b.date, '', b.weightLb ? String(b.weightLb) : '', b.bodyFatPct ? String(b.bodyFatPct) : '', b.waistIn ? String(b.waistIn) : '', b.neckIn ? String(b.neckIn) : ''])
-  const csv = rows.map((r) => r.map((c) => (c.includes(',') ? `"${c}"` : c)).join(',')).join('\n')
+    rows.push(['body', b.date, '', b.weightLb ? String(b.weightLb) : '', b.bodyFatPct ? String(b.bodyFatPct) : '', b.waistIn ? String(b.waistIn) : '', b.neckIn ? String(b.neckIn) : '', b.note ?? ''])
+  // CRLF line endings, which is what RFC 4180 specifies and what Excel expects.
+  const csv = rows.map((r) => r.map(csvCell).join(',')).join('\r\n')
   const blob = new Blob([csv], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

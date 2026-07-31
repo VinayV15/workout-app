@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { uid, useStore } from '../lib/store'
+import { DRAFT_KEY, uid, useStore } from '../lib/store'
 import type { Exercise, LoggedExercise, Muscle, SetEntry, Workout } from '../lib/types'
 import { MUSCLES, MUSCLE_LABEL } from '../lib/types'
 import { allExercises, exerciseMap } from '../lib/exercises'
@@ -36,8 +36,6 @@ import {
   workingSets,
 } from '../lib/calc'
 import { volumeBar, volumeTargets } from '../lib/recommend'
-
-const DRAFT_KEY = 'forge.draft.workout'
 
 type SubTab = 'log' | 'history' | 'progress' | 'volume'
 

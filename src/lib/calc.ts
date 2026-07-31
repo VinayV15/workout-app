@@ -116,6 +116,25 @@ export function lengthUnit(units: Profile['units']): string {
   return units === 'metric' ? 'cm' : 'in'
 }
 
+export const FT_PER_M = 3.280839895
+export const ftToM = (ft: number) => ft / FT_PER_M
+export const mToFt = (m: number) => m * FT_PER_M
+
+/**
+ * Elevation is stored in feet like every other length here is stored imperial,
+ * so a metric entry has to be converted rather than kept raw — otherwise the
+ * same number gets relabelled "ft" the moment units are switched.
+ */
+export function dispElevation(ft: number, units: Profile['units']): number {
+  return units === 'metric' ? ftToM(ft) : ft
+}
+export function storeElevation(v: number, units: Profile['units']): number {
+  return units === 'metric' ? mToFt(v) : v
+}
+export function elevationUnit(units: Profile['units']): string {
+  return units === 'metric' ? 'm' : 'ft'
+}
+
 export function round(n: number, places = 1): number {
   const f = 10 ** places
   return Math.round(n * f) / f
@@ -151,6 +170,18 @@ export function parseDuration(input: string): number | null {
   const n = Number(t.replace(/[ms]/g, ''))
   if (Number.isNaN(n)) return null
   return n * 60 // bare number means minutes
+}
+
+/**
+ * Escapes one CSV field per RFC 4180. Lives here rather than beside the export so
+ * it is reachable from the tests, which cannot import the store's JSX.
+ *
+ * Quoting only on a comma was not enough: a note containing a quote or a line
+ * break silently corrupted every column after it, and notes are exactly where
+ * free text ends up.
+ */
+export function csvCell(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
 /** Seconds per display distance unit. */
@@ -343,13 +374,18 @@ export function exercisePR(exerciseId: string, data: AppData) {
   let bestE1rm = 0
   let bestDate = ''
   const ex = exerciseMap(data.customExercises).get(exerciseId)
+  const carriesBodyweight = ex?.loadType === 'bodyweight' || ex?.loadType === 'weighted_bodyweight'
   for (const w of data.workouts) {
     const le = w.exercises.find((e) => e.exerciseId === exerciseId)
     if (!le) continue
     const bw = bodyweightOn(data.body, w.date) ?? 0
     for (const s of workingSets(le.sets)) {
-      if (s.weight > heaviest) {
-        heaviest = s.weight
+      // Total load, so the heaviest set is on the same footing as the estimated
+      // 1RM beside it — otherwise a weighted pull-up reports its added plate as
+      // the heaviest thing lifted.
+      const load = carriesBodyweight ? bw + (s.weight || 0) : s.weight
+      if (load > heaviest) {
+        heaviest = load
         heaviestReps = s.reps
       }
     }
@@ -874,11 +910,19 @@ export function currentStreak(data: AppData): number {
   return streak
 }
 
-/** Consecutive training days with no rest day — a fatigue signal. */
+/**
+ * Consecutive training days with no rest day — a fatigue signal.
+ *
+ * Counts back from yesterday when nothing is logged today, exactly as the streak
+ * above does. Anchoring strictly on today meant the run of days only became
+ * visible *after* a session had been logged, so "take a rest day" could never
+ * reach you at the one moment it is useful: before you train.
+ */
 export function consecutiveTrainingDays(data: AppData): number {
   const days = new Set<string>([...data.workouts.map((w) => w.date), ...data.runs.map((r) => r.date)])
   let n = 0
   let cursor = todayISO()
+  if (!days.has(cursor)) cursor = addDays(cursor, -1)
   while (days.has(cursor)) {
     n++
     cursor = addDays(cursor, -1)

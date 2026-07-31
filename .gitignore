@@ -4,3 +4,11 @@ dev-dist
 .DS_Store
 *.local
 .vite
+tsconfig.tsbuildinfo
+
+# Every source file here is .ts or .tsx, so a .js beside one is compiler output
+# that got loose. It is worth ignoring rather than only fixing the script that
+# produced it: Vite resolves the stale .js in preference to the source, so the
+# dev server quietly serves the old build until the file is deleted.
+src/**/*.js
+vite.config.js

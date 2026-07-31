@@ -8,9 +8,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
-    "test": "npm run test:sync && npm run test:physique",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:sync && npm run test:coach && npm run test:physique",
     "test:sync": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-sync.mjs",
+    "test:coach": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-coach.mjs",
     "test:physique": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-physique.mjs",
     "icons": "node scripts/make-icons.mjs"
   },

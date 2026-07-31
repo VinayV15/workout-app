@@ -1,6 +1,6 @@
 import type { AppData, Muscle, Run } from './types'
 import { HARD_RUN_TYPES, MUSCLE_LABEL, MUSCLES } from './types'
-import { EXERCISES } from './exercises'
+import { EXERCISES, exerciseMap } from './exercises'
 import {
   acwr,
   addDays,
@@ -31,6 +31,7 @@ import {
   todayISO,
   trainingPaces,
   vdot,
+  volumeLoad,
   weekStart,
   weightRateLbPerWeek,
   weeklyMileage,
@@ -852,9 +853,10 @@ export interface SessionSuggestion {
 }
 
 /**
- * What to do today. Rest wins if fatigue is high; otherwise whichever of
- * lifting or running is furthest behind the week's plan, biased toward
- * lifting because it is what protects muscle in a deficit.
+ * What to do today. Rest wins if fatigue is high; then an active training block
+ * decides; otherwise whichever of lifting or running is furthest behind the
+ * week's plan, biased toward lifting because it is what protects muscle in a
+ * deficit.
  */
 export function suggestToday(data: AppData): SessionSuggestion {
   const consec = consecutiveTrainingDays(data)
@@ -967,17 +969,18 @@ export function weeklyScore(data: AppData): { label: string; value: string; sub:
   const sets = data.workouts
     .filter((w) => w.date >= week)
     .reduce((a, w) => a + w.exercises.reduce((b, e) => b + workingSets(e.sets).length, 0), 0)
+  // Through volumeLoad, so bodyweight movements are counted the same way the Lift
+  // tab counts them. Reading `s.weight || bw` instead credited a weighted pull-up
+  // with only the plate hanging off it.
+  const map = exerciseMap(data.customExercises)
   const tonnage = data.workouts
     .filter((w) => w.date >= week)
-    .reduce(
-      (a, w) =>
-        a +
-        w.exercises.reduce((b, e) => {
-          const bw = bodyweightOn(data.body, w.date) ?? 0
-          return b + workingSets(e.sets).reduce((c, s) => c + (s.weight || bw) * s.reps, 0)
-        }, 0),
-      0,
-    )
+    .reduce((a, w) => {
+      const bw = bodyweightOn(data.body, w.date) ?? 0
+      return (
+        a + w.exercises.reduce((b, e) => b + volumeLoad(e.sets, bw, map.get(e.exerciseId)?.loadType), 0)
+      )
+    }, 0)
   const du = distanceUnit(data.profile.units)
   return [
     { label: 'Lifting days', value: `${lifts}`, sub: `of ${data.goals.liftDaysPerWeek} planned` },
