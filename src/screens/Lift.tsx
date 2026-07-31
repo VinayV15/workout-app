@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DRAFT_KEY, uid, useStore } from '../lib/store'
-import type { Exercise, LoggedExercise, Muscle, SetEntry, Workout } from '../lib/types'
+import type { Exercise, LoggedExercise, Muscle, Profile, SetEntry, Workout } from '../lib/types'
 import { MUSCLES, MUSCLE_LABEL } from '../lib/types'
+import {
+  DEFAULT_BAR_LB,
+  detectPRs,
+  formatPlates,
+  isBarLoaded,
+  plateSetFor,
+  platesFor,
+  repeatLastSession,
+  restSecondsFor,
+  warmupRamp,
+  type PRHit,
+} from '../lib/gym'
 import { allExercises, exerciseMap } from '../lib/exercises'
 import {
   Button,
@@ -86,6 +98,8 @@ function LogTab() {
   })
   const [picking, setPicking] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
+  /** Records set by the session just saved, shown until the next one starts. */
+  const [prs, setPrs] = useState<PRHit[]>([])
 
   // Keep the in-progress session on disk so closing the app mid-workout,
   // or a phone locking itself, never loses the sets already entered.
@@ -115,18 +129,67 @@ function LogTab() {
   const canSave = totalSets > 0
 
   function save() {
-    saveWorkout({
-      ...workout,
-      exercises: workout.exercises.filter((e) => e.sets.length > 0),
-    })
+    const cleaned = { ...workout, exercises: workout.exercises.filter((e) => e.sets.length > 0) }
+    // Judged before the save, against a log that does not yet contain this
+    // session — afterwards it would be competing with itself.
+    setPrs(detectPRs(cleaned, data))
+    saveWorkout(cleaned)
     localStorage.removeItem(DRAFT_KEY)
     setWorkout(emptyWorkout())
+  }
+
+  function repeatLast() {
+    const repeated = repeatLastSession(data, todayISO(), () => uid('w'))
+    if (!repeated) return
+    if (totalSets > 0 && !confirm('Replace the session in progress with a copy of your last one?')) return
+    setWorkout(repeated)
+    setPrs([])
   }
 
   const planBlock = workout.programBlockId ? data.programs.find((b) => b.id === workout.programBlockId) : undefined
 
   return (
     <div className="space-y-4">
+      {/* A record is the clearest evidence the training is working, and it is
+          otherwise invisible — the number it beat scrolled off the screen weeks
+          ago, and nothing else in the app would mention it. */}
+      {prs.length > 0 && (
+        <div
+          className="rounded-xl border px-3 py-2.5"
+          style={{ borderColor: 'color-mix(in oklab, var(--good) 45%, transparent)' }}
+        >
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <span aria-hidden style={{ color: 'var(--good)' }}>
+              ★
+            </span>
+            {prs.length === 1 ? 'New personal record' : `${prs.length} new personal records`}
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {prs.map((pr) => (
+              <li key={pr.exerciseId} className="text-[11px] text-ink-2">
+                <span className="text-ink">{pr.name}</span>
+                {pr.kinds.includes('weight') ? (
+                  <>
+                    {' '}
+                    — heaviest set {round(dispWeight(pr.heaviestLb, units), 1)} {wu}, up from{' '}
+                    {round(dispWeight(pr.previousHeaviestLb, units), 1)}
+                  </>
+                ) : (
+                  <>
+                    {' '}
+                    — estimated 1RM {round(dispWeight(pr.e1rmLb, units), 1)} {wu}, up from{' '}
+                    {round(dispWeight(pr.previousE1rmLb, units), 1)}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+          <button onClick={() => setPrs([])} className="mt-1.5 text-[11px] text-ink-3 hover:text-ink">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {planBlock && (
         <div
           className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs"
@@ -174,12 +237,15 @@ function LogTab() {
       {workout.exercises.length === 0 ? (
         <Empty
           title="Nothing logged yet"
-          body="Add exercises one at a time, or load a template to fill the session in a tap. Your entries are saved as you type, so you can close the app mid-workout."
+          body="Add exercises one at a time, load a template, or repeat your last session with its loads already filled in. Your entries are saved as you type, so you can close the app mid-workout."
           action={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-center gap-2">
               <Button variant="primary" onClick={() => setPicking(true)}>
                 Add exercise
               </Button>
+              {/* A template fills the exercise list; repeating fills the numbers
+                  too, which is what you want when running the same session again. */}
+              {data.workouts.length > 0 && <Button onClick={repeatLast}>Repeat last session</Button>}
               <Button onClick={() => setTemplateOpen(true)}>Use template</Button>
             </div>
           }
@@ -193,6 +259,7 @@ function LogTab() {
               logged={le}
               bodyweight={bw}
               units={units}
+              profile={data.profile}
               lastSession={findLastSession(data.workouts, le.exerciseId, workout.id)}
               onChange={(patch) => updateExercise(idx, patch)}
               onRemove={() => removeExercise(idx)}
@@ -330,6 +397,7 @@ function ExerciseCard({
   logged,
   bodyweight,
   units,
+  profile,
   lastSession,
   onChange,
   onRemove,
@@ -338,6 +406,7 @@ function ExerciseCard({
   logged: LoggedExercise
   bodyweight: number
   units: 'imperial' | 'metric'
+  profile: Profile
   lastSession: { date: string; sets: SetEntry[] } | null
   onChange: (patch: Partial<LoggedExercise>) => void
   onRemove: () => void
@@ -346,6 +415,11 @@ function ExerciseCard({
   const isTime = exercise?.loadType === 'time'
   const isBw = exercise?.loadType === 'bodyweight' || exercise?.loadType === 'weighted_bodyweight'
   const [restEnd, setRestEnd] = useState<number | null>(null)
+
+  const restSec = restSecondsFor(profile, exercise)
+  const barLb = profile.barWeightLb ?? DEFAULT_BAR_LB
+  const plates = useMemo(() => plateSetFor(units), [units])
+  const loadable = isBarLoaded(exercise)
 
   function addSet() {
     const last = logged.sets[logged.sets.length - 1]
@@ -356,7 +430,21 @@ function ExerciseCard({
         ? { reps: prev.reps, weight: prev.weight, seconds: prev.seconds }
         : { reps: isTime ? 0 : 8, weight: 0 }
     onChange({ sets: [...logged.sets, seed] })
-    setRestEnd(Date.now() + 90_000)
+    // Only when the timer is switched on, and for the duration this exercise
+    // warrants rather than one number for everything.
+    if (restSec != null) setRestEnd(Date.now() + restSec * 1000)
+  }
+
+  /**
+   * Prepends a warm-up ramp to the heaviest working set already entered. Runs off
+   * what is in the grid rather than asking for a target, because by the time you
+   * want warm-ups you have already decided today's top set.
+   */
+  function addWarmups() {
+    const top = workingSets(logged.sets).reduce((m, s) => Math.max(m, s.weight || 0), 0)
+    const ramp = warmupRamp(top, barLb, plates, loadable)
+    if (ramp.length === 0) return
+    onChange({ sets: [...ramp, ...logged.sets] })
   }
 
   function updateSet(i: number, patch: Partial<SetEntry>) {
@@ -373,6 +461,19 @@ function ExerciseCard({
     return Math.max(b, e1rm(load, s.reps))
   }, 0)
 
+  // Only offer a ramp when there is a working load to ramp toward and no warm-ups
+  // are already sitting there.
+  const canRamp =
+    !isTime &&
+    !logged.sets.some((s) => s.warmup) &&
+    working.some((s) => (s.weight || 0) > 0) &&
+    warmupRamp(
+      working.reduce((m, s) => Math.max(m, s.weight || 0), 0),
+      barLb,
+      plates,
+      loadable,
+    ).length > 0
+
   return (
     <Card className="space-y-3">
       <div className="flex items-start justify-between gap-2">
@@ -382,6 +483,10 @@ function ExerciseCard({
             {exercise ? exercise.primary.map((m) => MUSCLE_LABEL[m]).join(', ') : ''}
             {isBw ? ' · bodyweight + added load' : ''}
           </p>
+          {/* Stating the convention where the number is entered, because getting
+              it wrong silently corrupts every e1RM, tonnage and prescription
+              downstream — and nothing else in the app would flag it. */}
+          {!isTime && <p className="mt-0.5 text-[11px] text-ink-3">Enter {weightConvention(exercise)}.</p>}
         </div>
         <button onClick={onRemove} className="shrink-0 rounded-lg px-2 py-1 text-xs text-ink-3 hover:text-critical">
           Remove
@@ -403,7 +508,7 @@ function ExerciseCard({
           <div className="grid grid-cols-[1.6rem_1fr_1fr_3.2rem_1.6rem] items-center gap-1.5 text-[10px] text-ink-3">
             <span>#</span>
             <span>{isTime ? 'Seconds' : 'Reps'}</span>
-            <span>{isBw ? `+${wu}` : wu}</span>
+            <span>{isBw ? `+${wu}` : loadable ? `${wu} total` : wu}</span>
             <span>RPE</span>
             <span />
           </div>
@@ -452,11 +557,26 @@ function ExerciseCard({
         </div>
       )}
 
+      {/* What to actually hang on the bar for the set just entered — the number in
+          the grid is the total, and nobody wants to halve it under a squat rack. */}
+      {loadable && <PlateHint sets={logged.sets} barLb={barLb} plates={plates} units={units} />}
+
       <div className="flex items-center gap-2">
         <Button variant="secondary" onClick={addSet} className="flex-1">
           + Set
         </Button>
-        {restEnd && <RestTimer endAt={restEnd} onDone={() => setRestEnd(null)} />}
+        {canRamp && (
+          <Button variant="ghost" onClick={addWarmups} title="Add 3 warm-up sets working up to your top set">
+            Warm up
+          </Button>
+        )}
+        {restEnd && (
+          <RestTimer
+            endAt={restEnd}
+            onDone={() => setRestEnd(null)}
+            onExtend={() => setRestEnd((e) => (e ?? Date.now()) + 30_000)}
+          />
+        )}
       </div>
 
       {best > 0 && (
@@ -469,31 +589,121 @@ function ExerciseCard({
   )
 }
 
-/** Counts down the rest interval; a chip rather than a modal so it never blocks logging. */
-function RestTimer({ endAt, onDone }: { endAt: number; onDone: () => void }) {
+/** How the weight column should be read, per equipment. */
+function weightConvention(ex?: Exercise): string {
+  if (ex?.loadType === 'bodyweight' || ex?.loadType === 'weighted_bodyweight') {
+    return 'any weight you added — leave it blank for bodyweight alone'
+  }
+  if (ex?.equipment === 'barbell') return 'the total load including the bar'
+  if (ex?.equipment === 'dumbbell') return 'the weight of one dumbbell'
+  return 'the weight shown on the machine'
+}
+
+/**
+ * Per-side plate breakdown for the last set entered.
+ *
+ * The last set rather than all of them: during a session the number you need is
+ * the one you are about to load, and a breakdown per row would triple the height
+ * of the grid on a phone.
+ */
+function PlateHint({
+  sets,
+  barLb,
+  plates,
+  units,
+}: {
+  sets: SetEntry[]
+  barLb: number
+  plates: number[]
+  units: 'imperial' | 'metric'
+}) {
+  const last = sets[sets.length - 1]
+  if (!last?.weight) return null
+  const b = platesFor(last.weight, barLb, plates, units)
+  const wu = weightUnit(units)
+  return (
+    <p className="text-[11px] text-ink-3">
+      {b.belowBar ? (
+        <>
+          {round(dispWeight(last.weight, units), 1)} {wu} is below the bar itself ({round(b.bar, 1)} {wu}).
+        </>
+      ) : (
+        <>
+          <span className="text-ink-2">Per side:</span> {formatPlates(b.perSide)}
+          <span className="text-ink-3">
+            {' '}
+            · {round(b.bar, 1)} {wu} bar
+          </span>
+          {b.leftover > 0.01 && (
+            <span style={{ color: 'var(--warning)' }}>
+              {' '}
+              · {round(b.leftover, 2)} {wu} short of your plates
+            </span>
+          )}
+        </>
+      )}
+    </p>
+  )
+}
+
+/**
+ * Counts down the rest interval; a chip rather than a modal so it never blocks
+ * logging. `+30` is there because the honest answer to "how long should I rest"
+ * is often "a bit longer than I planned", and the alternative is doing arithmetic
+ * with a barbell waiting.
+ */
+function RestTimer({
+  endAt,
+  onDone,
+  onExtend,
+}: {
+  endAt: number
+  onDone: () => void
+  onExtend: () => void
+}) {
   const [now, setNow] = useState(Date.now())
-  const doneRef = useRef(false)
+  const firedRef = useRef(false)
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 500)
     return () => clearInterval(t)
   }, [])
   const remaining = Math.max(0, Math.round((endAt - now) / 1000))
   useEffect(() => {
-    if (remaining === 0 && !doneRef.current) {
-      doneRef.current = true
+    if (remaining > 0) {
+      // Extending past zero re-arms the buzz, so a second countdown still ends
+      // with one.
+      firedRef.current = false
+      return
+    }
+    if (!firedRef.current) {
+      firedRef.current = true
       // A short vibration where supported; silent elsewhere.
       navigator.vibrate?.(200)
     }
   }, [remaining])
+
+  const done = remaining === 0
   return (
-    <button
-      onClick={onDone}
-      className="tabular shrink-0 rounded-xl border border-line px-3 py-2 text-sm"
-      style={{ color: remaining === 0 ? 'var(--good)' : 'var(--text-secondary)' }}
-      title="Tap to dismiss the rest timer"
-    >
-      {remaining === 0 ? 'Rest done' : `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`}
-    </button>
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        onClick={onExtend}
+        className="rounded-lg border border-line px-2 py-2 text-[11px] text-ink-3 hover:text-ink"
+        title="Rest 30 seconds longer"
+      >
+        +30
+      </button>
+      <button
+        onClick={onDone}
+        className="tabular rounded-xl border px-3 py-2 text-sm"
+        style={{
+          color: done ? 'var(--good)' : 'var(--text-secondary)',
+          borderColor: done ? 'color-mix(in oklab, var(--good) 45%, transparent)' : 'var(--border)',
+        }}
+        title="Tap to dismiss the rest timer"
+      >
+        {done ? 'Rest done' : `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')}`}
+      </button>
+    </div>
   )
 }
 

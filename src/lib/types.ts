@@ -195,6 +195,16 @@ export interface Goals {
 export type Units = 'imperial' | 'metric'
 export type Sex = 'male' | 'female'
 
+/**
+ * How long the rest timer runs between sets.
+ *
+ * `off` is a first-class option, not a zero duration — plenty of people pace
+ * themselves by feel and a countdown they did not ask for is just noise.
+ * `byPattern` exists because one number cannot serve both ends of a session:
+ * three minutes is right after a heavy squat and absurd after a lateral raise.
+ */
+export type RestMode = 'off' | 'uniform' | 'byPattern'
+
 export interface Profile {
   name?: string
   sex: Sex
@@ -205,6 +215,19 @@ export interface Profile {
   activity: 'sedentary' | 'light' | 'moderate' | 'high'
   /** Hand-entered maintenance calories, overrides the estimate when set. */
   tdeeOverride?: number
+  /** Rest timer behaviour. Undefined is treated as `uniform`. */
+  restMode?: RestMode
+  /** Seconds, for `uniform`. */
+  restSec?: number
+  /** Seconds after a compound lift, for `byPattern`. */
+  restCompoundSec?: number
+  /** Seconds after isolation or core work, for `byPattern`. */
+  restIsolationSec?: number
+  /**
+   * Weight of an empty bar, in pounds, for the plate calculator. Varies by gym
+   * and by bar — a women's Olympic bar is 35 lb, a trap bar can be 60.
+   */
+  barWeightLb?: number
 }
 
 /**

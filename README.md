@@ -207,11 +207,46 @@ Sync is not a backup — it is a mirror, so a bad import propagates. Keep real b
 
 **Lifting.** 60+ exercises mapped to muscle groups and movement patterns, plus custom exercises. Log sets,
 reps, load, RPE and warm-ups; the previous session's sets are shown on every card so you know what to beat.
-Templates pre-fill a session, a rest timer starts when you add a set, and the in-progress session is saved
-continuously so a locked phone never loses your work.
+Templates pre-fill a session, **Repeat last session** pre-fills the numbers too, and the in-progress session is
+saved continuously so a locked phone never loses your work.
 
 Progression is tracked as **estimated 1RM** (Epley) from your best set each session, so a heavy triple and a
-set of ten are directly comparable, alongside per-session tonnage and a six-week trend.
+set of ten are directly comparable, alongside per-session tonnage and a six-week trend. Beat a best and the
+session says so when you save it.
+
+### How to enter a load
+
+**Total weight, bar included.** A 45 lb bar with two 45s per side is entered as `225`, not `90`. Every card
+states the convention under the exercise name, because getting it wrong is silent: nothing downstream can tell
+a per-side entry from a total, so the estimated 1RM, the tonnage and the block's next prescribed load all
+quietly become wrong together.
+
+- **Barbell** — the total load including the bar. The card shows the **per-side plate breakdown** beneath the
+  sets, so you enter what you lifted and read off what to hang on the bar. Set your bar weight in Settings (a
+  women's bar is 35 lb, a trap bar can be 60), and any total your plates cannot make is flagged rather than
+  rounded away.
+- **Dumbbell** — the weight of *one* dumbbell, which is how everybody talks about them. Note the consequence:
+  bilateral dumbbell work therefore counts toward tonnage at half the weight actually moved.
+- **Machine or cable** — whatever the machine reads.
+- **Pull-ups, dips, push-ups** — only the weight you *added*. Leave it blank for bodyweight alone; your logged
+  bodyweight on that date is added automatically, so a weighted pull-up is compared on total load.
+- **Planks and carries** — seconds, not weight.
+
+**Warm up** on any exercise card generates a ramp to your top set — three sets at roughly 40/60/80%, descending
+in reps, snapped to loads the plates can make and marked as warm-ups so they never count toward volume.
+
+### Rest between sets
+
+Configured under *Settings → In the gym*, three ways:
+
+- **One duration** — the same countdown after every set (default 90 seconds).
+- **By exercise** — a longer rest after compounds than after isolation and core work (default 3 minutes and 1
+  minute). Two to three minutes on a heavy squat is what lets the next set match the last; a minute is plenty
+  on a curl.
+- **Off** — no timer at all. Logging a set just logs it.
+
+The timer is a chip beside the *+ Set* button rather than a modal, so it never blocks logging, with **+30** for
+when you need longer and a tap to dismiss. It buzzes on completion where the browser supports it.
 
 **Running.** Distance, time, type (easy / long / tempo / intervals / race), HR, elevation, RPE. Derived:
 pace, weekly distance, best time at every standard distance, **Riegel** predictions for the distances you
@@ -399,6 +434,7 @@ src/lib/exercises.ts   exercise library, muscle + pattern mapping, templates
 src/lib/calc.ts        all the sports-science math (1RM, VDOT, ACWR, Navy BF, TDEE, trends)
 src/lib/recommend.ts   the coaching engine and volume targets
 src/lib/program.ts     training blocks: rotation, double progression, deloads, presets
+src/lib/gym.ts         plate math, warm-up ramps, rest durations, PR detection
 src/lib/store.tsx      on-device persistence, change tracking, backup and restore
 src/lib/physique.ts    measurements -> the three body shells (frame / lean / full)
 src/lib/bodyMesh.ts    the smooth outer shell (the fat layer)
@@ -412,6 +448,7 @@ src/lib/sync.ts        Supabase sync: auth, pull, record-by-record merge, push
 supabase/migrations/    the table and security policy sync needs, as a migration
 scripts/test-sync.mjs  sync merge tests (npm test)
 scripts/test-coach.mjs     fatigue, load accounting, units and CSV escaping
+scripts/test-gym.mjs       plate math, warm-up ramps, rest durations, PR detection
 scripts/test-program.mjs   block rotation, progression arithmetic and deloads
 scripts/test-physique.mjs  physique model + mesh tests
 src/components/        UI primitives and chart wrappers

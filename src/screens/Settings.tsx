@@ -15,7 +15,21 @@ import {
 } from '../lib/sync'
 import { Button, Card, Chip, Field, SectionTitle, Segmented, SelectField } from '../components/ui'
 import SignInForm from '../components/SignInForm'
-import { GOAL_LABEL, MUSCLES, MUSCLE_LABEL, type GoalPrimary, type Sex, type Units } from '../lib/types'
+import {
+  GOAL_LABEL,
+  MUSCLES,
+  MUSCLE_LABEL,
+  type GoalPrimary,
+  type RestMode,
+  type Sex,
+  type Units,
+} from '../lib/types'
+import {
+  DEFAULT_BAR_LB,
+  DEFAULT_REST_COMPOUND_SEC,
+  DEFAULT_REST_ISOLATION_SEC,
+  DEFAULT_REST_SEC,
+} from '../lib/gym'
 import {
   RACE_DISTANCES,
   dispDistance,
@@ -142,6 +156,8 @@ export default function Settings() {
           </div>
         </Card>
       </section>
+
+      <RestTimerSection />
 
       <section>
         <SectionTitle sub="Change these any time — every recommendation, volume target and calorie number adjusts immediately">
@@ -327,6 +343,102 @@ export default function Settings() {
 
       <InstallSection />
     </div>
+  )
+}
+
+/**
+ * Rest timer and bar weight — the two settings that only matter while you are
+ * actually in the gym, so they live together rather than under Profile.
+ */
+function RestTimerSection() {
+  const { data, setProfile } = useStore()
+  const p = data.profile
+  const units = p.units
+  const mode = p.restMode ?? 'uniform'
+  const wu = weightUnit(units)
+
+  /** Seconds shown as a plain number of seconds, which is how people set a timer. */
+  const secField = (
+    label: string,
+    value: number | undefined,
+    fallback: number,
+    onChange: (v: number | undefined) => void,
+    hint?: string,
+  ) => (
+    <Field
+      label={label}
+      type="number"
+      inputMode="numeric"
+      min={0}
+      step={15}
+      suffix="sec"
+      value={value ?? fallback}
+      onChange={(e) => onChange(e.target.value === '' ? undefined : Math.max(0, Number(e.target.value)))}
+      hint={hint}
+    />
+  )
+
+  return (
+    <section>
+      <SectionTitle sub="What happens after you log a set, and what the plate calculator assumes about your bar">
+        In the gym
+      </SectionTitle>
+      <Card className="space-y-3">
+        <div>
+          <span className="label">Rest timer</span>
+          <Segmented
+            value={mode}
+            onChange={(m: RestMode) => setProfile({ restMode: m })}
+            options={[
+              { value: 'uniform', label: 'One duration' },
+              { value: 'byPattern', label: 'By exercise' },
+              { value: 'off', label: 'Off' },
+            ]}
+          />
+        </div>
+
+        {mode === 'uniform' &&
+          secField('Rest between sets', p.restSec, DEFAULT_REST_SEC, (v) => setProfile({ restSec: v }))}
+
+        {mode === 'byPattern' && (
+          <div className="grid grid-cols-2 gap-3">
+            {secField('After a compound', p.restCompoundSec, DEFAULT_REST_COMPOUND_SEC, (v) =>
+              setProfile({ restCompoundSec: v }),
+            )}
+            {secField('After isolation', p.restIsolationSec, DEFAULT_REST_ISOLATION_SEC, (v) =>
+              setProfile({ restIsolationSec: v }),
+            )}
+          </div>
+        )}
+
+        <p className="text-[11px] leading-relaxed text-ink-3">
+          {mode === 'off'
+            ? 'No timer will appear. Logging a set just logs it — pace yourself by feel.'
+            : mode === 'byPattern'
+              ? 'Squats, presses, rows and hinges get the compound duration; isolation and core work get the shorter one. Two to three minutes on heavy compounds is what lets the next set match the last; a minute is plenty on a curl.'
+              : 'The same countdown after every set. Set it to 0, or choose Off, for no timer at all.'}
+        </p>
+
+        <div className="border-t border-line pt-3">
+          <Field
+            label="Empty bar weight"
+            type="number"
+            inputMode="decimal"
+            step="0.5"
+            suffix={wu}
+            value={round(dispWeight(p.barWeightLb ?? DEFAULT_BAR_LB, units), 1)}
+            onChange={(e) =>
+              setProfile({
+                barWeightLb: e.target.value ? storeWeight(Number(e.target.value), units) : undefined,
+              })
+            }
+            hint={`Used by the plate calculator on barbell lifts. A standard Olympic bar is ${
+              units === 'metric' ? '20 kg' : '45 lb'
+            }; a women's bar is ${units === 'metric' ? '15 kg' : '35 lb'}.`}
+          />
+        </div>
+      </Card>
+    </section>
   )
 }
 
