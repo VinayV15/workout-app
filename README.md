@@ -108,10 +108,14 @@ The app is offline-first, which matters because gym basements have no signal. On
 Off by default — the app is fully usable without it. Switching it on keeps your phone, laptop and desktop in
 step through a Supabase project that belongs to you.
 
+The schema lives in `supabase/migrations/`, so if you connect Supabase's GitHub integration to this repository
+it applies on push and stays version-controlled. It is written to be safe to re-run, so connecting the
+integration to a project you already set up by hand is a no-op rather than an error.
+
 **Setup, once, about five minutes:**
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. In the project's **SQL Editor**, paste and run [`supabase/schema.sql`](supabase/schema.sql). That creates
+2. In the project's **SQL Editor**, paste and run [`supabase/migrations/20260731000000_init_records.sql`](supabase/migrations/20260731000000_init_records.sql). That creates
    one `records` table and the row-level-security policy that makes your rows readable only by you.
 3. In the app: *Settings → Cross-device sync*, paste the **Project URL** and the **anon public** key from
    Supabase → Settings → API, and save.
@@ -355,7 +359,7 @@ src/lib/skeletonMesh.ts  the bones
 src/lib/timeline.ts    body composition at any past or projected date
 src/components/BodyScan.tsx  the three.js wireframe renderer
 src/lib/sync.ts        Supabase sync: auth, pull, record-by-record merge, push
-supabase/schema.sql    the one table and security policy sync needs
+supabase/migrations/    the table and security policy sync needs, as a migration
 scripts/test-sync.mjs  sync merge tests (npm test)
 scripts/test-physique.mjs  physique model + mesh tests
 src/components/        UI primitives and chart wrappers

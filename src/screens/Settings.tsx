@@ -519,7 +519,7 @@ function SyncSection() {
               </p>
               <p>
                 2. In the project's SQL editor, paste and run the contents of{' '}
-                <span className="text-ink">supabase/schema.sql</span> from this repo.
+                <span className="text-ink">supabase/migrations/</span> from this repo.
               </p>
               <p>
                 3. Copy the Project URL and the <span className="text-ink">anon public</span> key from Settings → API,

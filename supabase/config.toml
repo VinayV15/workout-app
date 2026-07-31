@@ -1,0 +1,10 @@
+# Supabase project configuration.
+#
+# `project_id` is the project reference from the dashboard URL, which is what
+# links this repository to the hosted project. It is not a secret: the reference
+# is already visible in the project URL the app connects to.
+project_id = "frdqljsqctksbzlrsggw"
+
+[db]
+# Postgres major version the hosted project runs, so local development matches.
+major_version = 15

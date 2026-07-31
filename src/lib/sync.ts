@@ -12,7 +12,7 @@ import type { AppData, BodyEntry, Exercise, Run, Workout, WorkoutTemplate } from
  * newer. Deletions travel as tombstones so they propagate instead of the record
  * being resurrected by the other device.
  *
- * Everything lives in a single `records` table (see supabase/schema.sql) keyed
+ * Everything lives in a single `records` table (see supabase/migrations/) keyed
  * by (user_id, tbl, id), which keeps the schema stable as the app's own types
  * evolve and makes the row-level security policy a one-liner.
  */
@@ -389,10 +389,10 @@ export async function runSync(local: AppData): Promise<SyncResult> {
 /** Turns the most common Supabase errors into something actionable. */
 function describe(message: string): string {
   if (/relation .*records.* does not exist/i.test(message) || /Could not find the table/i.test(message)) {
-    return 'The records table is missing — run supabase/schema.sql in your project\'s SQL editor.'
+    return 'The records table is missing — apply the migration in supabase/migrations/ to your project.'
   }
   if (/row-level security/i.test(message)) {
-    return 'Blocked by row-level security — re-run the policy section of supabase/schema.sql.'
+    return 'Blocked by row-level security — re-run the policy section of the migration in supabase/migrations/.'
   }
   if (/Failed to fetch|NetworkError|ERR_NAME_NOT_RESOLVED|fetch failed/i.test(message)) {
     return 'Could not reach the project. Check the URL, your connection, or whether a paused free project needs restoring.'
