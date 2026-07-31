@@ -35,11 +35,12 @@ jobs:
           # into the build. Leave them unset and sync is configured in-app instead.
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      # Pages must already be enabled for the repository, with its source set to
+      # "GitHub Actions" (Settings -> Pages). The `enablement: true` option looks
+      # like it would remove that step, but the workflow's own token is not
+      # permitted to create a Pages site, so it fails with "Resource not
+      # accessible by integration".
       - uses: actions/configure-pages@v5
-        with:
-          # Turns Pages on for the repo the first time this runs, so there is no
-          # manual step in Settings after creating the repository.
-          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

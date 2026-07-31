@@ -29,7 +29,9 @@ npm run preview
 The app is a PWA, so once it is reachable over HTTPS you install it like a native app.
 
 **Option A — GitHub Pages (free, recommended).** Push this folder to a **public** GitHub repository, then in
-the repo go to *Settings → Pages → Build and deployment → Source: GitHub Actions*. The included workflow
+the repo go to *Settings → Pages → Build and deployment → Source: GitHub Actions*. This step cannot be
+automated: a workflow's own token is not allowed to create a Pages site, so the first deploy fails until Pages
+has been switched on by hand once. The included workflow
 (`.github/workflows/deploy.yml`) builds and publishes on every push to `main`. Your app lives at
 `https://<your-username>.github.io/<repo-name>/`. (Pages is free for public repos; private repos need a paid
 plan, so use Option B if you want it private.)
