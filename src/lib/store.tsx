@@ -12,6 +12,7 @@ import type { AppData, BodyEntry, Exercise, Goals, Profile, Run, Workout, Workou
 import { DEFAULT_TEMPLATES } from './exercises'
 import { todayISO } from './calc'
 import {
+  completeSignInFromUrl,
   currentUser,
   emptySyncMeta,
   getAutoSync,
@@ -274,12 +275,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!isSyncConfigured()) return
     let cancelled = false
     void (async () => {
+      // A sign-in arriving on the URL has to be consumed before the session is
+      // read, or the app decides it is signed out and the link's tokens are lost.
+      let linkError: string | undefined
+      try {
+        await completeSignInFromUrl()
+      } catch (err) {
+        linkError = (err as Error).message
+      }
       const user = await currentUser()
       if (cancelled) return
       setSync((s) => ({
         ...s,
-        phase: user ? 'idle' : 'signed-out',
+        phase: linkError ? 'error' : user ? 'idle' : 'signed-out',
         email: user?.email,
+        error: linkError,
         lastSyncedAt: dataRef.current.sync.lastSyncedAt,
       }))
       if (user && getAutoSync()) void syncNow()

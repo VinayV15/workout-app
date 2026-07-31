@@ -123,8 +123,19 @@ export async function getClient(): Promise<SupabaseClient> {
           auth: {
             persistSession: true,
             autoRefreshToken: true,
-            // Picks up the session from the magic-link redirect fragment.
-            detectSessionInUrl: true,
+            // The redirect is handled explicitly by completeSignInFromUrl below,
+            // rather than relying on the SDK to notice it during construction.
+            // The client here is created lazily, so "on construction" is not a
+            // well-defined moment relative to page load.
+            detectSessionInUrl: false,
+            // Implicit rather than PKCE: PKCE requires the code verifier stored
+            // when the link was requested to still be present in the same browser
+            // profile when the link is opened. Mail clients, "open in app"
+            // handoffs and private windows all break that, and the failure looks
+            // like a silent no-op. Implicit returns the tokens on the redirect
+            // itself, which is self-contained. They are stripped from the URL as
+            // soon as they are consumed.
+            flowType: 'implicit',
             storageKey: 'forge.sync.auth',
           },
         }),
@@ -166,6 +177,70 @@ export async function verifySignInCode(email: string, code: string): Promise<voi
 export async function signOutSync(): Promise<void> {
   const client = await getClient()
   await client.auth.signOut()
+}
+
+/** Strips auth material from the address bar without reloading the page. */
+function clearAuthFromUrl() {
+  const url = new URL(window.location.href)
+  for (const key of ['code', 'error', 'error_code', 'error_description', 'sb']) {
+    url.searchParams.delete(key)
+  }
+  url.hash = ''
+  window.history.replaceState({}, '', url.pathname + (url.search || '') + '')
+}
+
+/**
+ * Completes a sign-in that arrived on the URL, and reports what happened.
+ *
+ * Called explicitly at startup rather than leaving it to the SDK's
+ * `detectSessionInUrl`. That option acts when the client is constructed, and this
+ * client is constructed lazily — so whether it ran before or after the app read
+ * the session depended on timing. When it lost that race the link appeared to do
+ * nothing at all: the app opened, the tokens were discarded, and the user was
+ * still signed out with no explanation.
+ *
+ * Returns 'signed-in' when a session was established, 'none' when the URL carried
+ * nothing, and throws with a readable message when the link itself was rejected.
+ */
+export async function completeSignInFromUrl(): Promise<'signed-in' | 'none'> {
+  if (!isSyncConfigured()) return 'none'
+
+  const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : ''
+  const fromHash = new URLSearchParams(hash)
+  const fromQuery = new URLSearchParams(window.location.search)
+  const pick = (key: string) => fromHash.get(key) ?? fromQuery.get(key)
+
+  // Supabase reports a rejected link as an error on the redirect, which must be
+  // surfaced — an expired link is the single most common thing to go wrong here.
+  const errorDescription = pick('error_description') ?? pick('error')
+  if (errorDescription) {
+    clearAuthFromUrl()
+    throw new Error(describe(errorDescription.replace(/\+/g, ' ')))
+  }
+
+  const accessToken = pick('access_token')
+  const refreshToken = pick('refresh_token')
+  const code = fromQuery.get('code')
+  if (!accessToken && !code) return 'none'
+
+  const client = await getClient()
+  if (accessToken && refreshToken) {
+    const { error } = await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+    if (error) {
+      clearAuthFromUrl()
+      throw new Error(describe(error.message))
+    }
+  } else if (code) {
+    // Still handled, so a link minted under the previous PKCE configuration is
+    // not simply ignored.
+    const { error } = await client.auth.exchangeCodeForSession(code)
+    if (error) {
+      clearAuthFromUrl()
+      throw new Error(describe(error.message))
+    }
+  }
+  clearAuthFromUrl()
+  return 'signed-in'
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +474,15 @@ function describe(message: string): string {
   }
   if (/Invalid API key|JWSError|invalid signature/i.test(message)) {
     return 'That anon key was rejected. Copy it again from Supabase → Settings → API.'
+  }
+  if (/otp_expired|Email link is invalid or has expired/i.test(message)) {
+    return 'That sign-in link was already used or has expired. Request a new one — and if your mail app previews links, use the 6-digit code instead, because a preview consumes the link.'
+  }
+  if (/access_denied/i.test(message)) {
+    return 'That sign-in link was rejected. Request a new one.'
+  }
+  if (/both auth code and code verifier|flow ?state|code verifier/i.test(message)) {
+    return 'This link was opened in a different browser from the one that requested it. Request a new link and open it in the same browser, or use the 6-digit code.'
   }
   if (/abort|timed? ?out|timeout/i.test(message)) {
     return 'The project did not respond in time. It may be paused on the free tier — restore it from the Supabase dashboard, or try again on a better connection.'
