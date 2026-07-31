@@ -1,14 +1,62 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { StoreProvider, useStore } from './lib/store'
 import Dashboard from './screens/Dashboard'
-import Lift from './screens/Lift'
-import RunScreen from './screens/Run'
-import Body from './screens/Body'
-import Coach from './screens/Coach'
-import Settings from './screens/Settings'
 import Onboarding from './screens/Onboarding'
 import Welcome from './screens/Welcome'
 import { getSkipRestore, launchView } from './lib/firstRun'
+
+/**
+ * Screens beyond Today are split into their own bundles.
+ *
+ * Today is what launches, and it is the only screen that has to be in the first
+ * download. The rest bring real weight with them — the exercise guides and their pose
+ * tables are ~70KB of data, the mesh builders another ~60KB, and the chart library
+ * rides along with whichever loads first. Shipping all of it to open a screen showing
+ * one card was most of the payload.
+ *
+ * They are then prefetched during the first idle moment, so by the time a tab is
+ * tapped the chunk is already in cache and the split costs nothing at the tap. On a
+ * dead connection the service worker has precached them anyway, which is what keeps
+ * offline launch intact.
+ */
+const Lift = lazy(() => import('./screens/Lift'))
+const RunScreen = lazy(() => import('./screens/Run'))
+const Body = lazy(() => import('./screens/Body'))
+const Coach = lazy(() => import('./screens/Coach'))
+const Settings = lazy(() => import('./screens/Settings'))
+
+const PREFETCH = [
+  // The chart library first: Today draws one, so it is the chunk most likely to be
+  // wanted within seconds of launch.
+  () => import('./components/TimeSeriesChart'),
+  () => import('./screens/Lift'),
+  () => import('./screens/Run'),
+  () => import('./screens/Body'),
+  () => import('./screens/Coach'),
+  () => import('./screens/Settings'),
+]
+
+/** Runs after the first paint has settled, without blocking it. */
+function onIdle(fn: () => void): () => void {
+  const ric = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
+  if (ric) {
+    const id = ric(fn)
+    return () => (window as Window & { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(id)
+  }
+  // Safari only got requestIdleCallback recently, so fall back to a timer well
+  // after first paint.
+  const t = window.setTimeout(fn, 1500)
+  return () => window.clearTimeout(t)
+}
+
+/**
+ * Held for the moment a screen's bundle is in flight. Deliberately almost nothing:
+ * after the idle prefetch this is never seen, and a spinner that flashes for 40ms
+ * reads worse than a blank space that does not.
+ */
+function ScreenLoading() {
+  return <div className="min-h-[60dvh]" aria-busy="true" />
+}
 
 type Tab = 'today' | 'lift' | 'run' | 'body' | 'coach' | 'settings'
 
@@ -48,6 +96,16 @@ function Shell() {
   // truer test than the phase — an expired link leaves an error phase with no
   // session, and that user still needs the sign-in gate rather than setup.
   const signedIn = !!sync.email
+
+  // Pull the other screens down in the background, so splitting them costs nothing
+  // at the tap. Deliberately after the launch pull has settled — competing with the
+  // sync request for bandwidth would delay the thing the user is waiting for.
+  useEffect(() => {
+    if (!sync.bootstrapped) return
+    return onIdle(() => {
+      for (const load of PREFETCH) void load()
+    })
+  }, [sync.bootstrapped])
 
   // Keyboard shortcuts on desktop: 1–5 jump between tabs.
   useEffect(() => {
@@ -128,12 +186,14 @@ function Shell() {
         </header>
 
         <div className="mx-auto max-w-3xl px-4 py-4 sm:px-6 sm:py-7">
-          {tab === 'today' && <Dashboard onNavigate={setTab} />}
-          {tab === 'lift' && <Lift />}
-          {tab === 'run' && <RunScreen />}
-          {tab === 'body' && <Body />}
-          {tab === 'coach' && <Coach onNavigate={setTab} />}
-          {tab === 'settings' && <Settings />}
+          <Suspense fallback={<ScreenLoading />}>
+            {tab === 'today' && <Dashboard onNavigate={setTab} />}
+            {tab === 'lift' && <Lift />}
+            {tab === 'run' && <RunScreen />}
+            {tab === 'body' && <Body />}
+            {tab === 'coach' && <Coach onNavigate={setTab} />}
+            {tab === 'settings' && <Settings />}
+          </Suspense>
         </div>
       </main>
 

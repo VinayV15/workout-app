@@ -563,5 +563,26 @@ src/screens/           Today, Lift, Run, Body, Coach (Plan + Advice), Settings, 
 scripts/make-icons.mjs generates the app icons (npm run icons)
 ```
 
-`npm run build` typechecks and bundles; `npm run typecheck` checks without emitting anything. There are no paid
-services, API keys or external calls anywhere in the app.
+## What gets downloaded
+
+The app is split so opening it costs as little as possible. Only the Today screen is in
+the first download; everything else arrives in its own chunk and is then prefetched
+during the first idle moment, so tapping a tab does not wait for a network round trip.
+
+| Chunk | Raw | Gzip | When it loads |
+| --- | --- | --- | --- |
+| App shell + Today | 315 KB | 100 KB | On launch |
+| Charts (recharts) | 418 KB | 113 KB | First chart drawn |
+| Lift | 88 KB | 25 KB | Lift tab |
+| Body / Coach / Settings / Run | 15–29 KB each | 6–10 KB | Their tab |
+| Physique model (three.js) | 735 KB | 190 KB | Physique tab |
+| Sync (Supabase) | 220 KB | 57 KB | Only if sync is on |
+
+Splitting the screens took the initial download from **938 KB to 315 KB** — the
+exercise guides and pose tables are ~70KB of data, the mesh builders another ~60KB, and
+the chart library was riding along with all of it. None of that is needed to show one
+card. The service worker precaches every chunk, so offline launch and offline
+navigation are unaffected.
+
+`npm run build` typechecks and bundles; `npm run typecheck` checks without emitting
+anything. There are no paid services, API keys or external calls anywhere in the app.
