@@ -102,6 +102,13 @@ export interface Workout {
   rpe?: number
   durationMin?: number
   note?: string
+  /**
+   * Set when the session was logged against a training block, which is what lets
+   * the rotation know this slot is done. Optional, so free-form sessions and
+   * everything logged before blocks existed stay valid.
+   */
+  programBlockId?: string
+  programDayId?: string
 }
 
 export type RunType = 'easy' | 'long' | 'tempo' | 'interval' | 'race' | 'recovery'
@@ -127,9 +134,13 @@ export interface Run {
   seconds: number
   type: RunType
   avgHr?: number
+  /** Always stored in feet; converted for display. */
   elevationFt?: number
   rpe?: number
   note?: string
+  /** As on Workout: the block rotation slot this run satisfied. */
+  programBlockId?: string
+  programDayId?: string
 }
 
 export interface BodyEntry {
@@ -217,6 +228,8 @@ export interface AppData {
   body: BodyEntry[]
   customExercises: Exercise[]
   templates: WorkoutTemplate[]
+  /** Training blocks, current and past. See lib/program.ts. */
+  programs: ProgramBlock[]
   /** Recommendation ids the user has dismissed, with the week they were hidden. */
   dismissed: Record<string, string>
   sync: SyncMeta
@@ -227,4 +240,49 @@ export interface WorkoutTemplate {
   name: string
   exerciseIds: string[]
   custom?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Training blocks. The logic that reads these lives in lib/program.ts; the
+// shapes live here with the rest of the stored document.
+// ---------------------------------------------------------------------------
+
+/** One prescribed exercise inside a session. */
+export interface ProgramSlot {
+  exerciseId: string
+  sets: number
+  repMin: number
+  repMax: number
+  /** Target effort, so autoregulated blocks can prescribe by RPE. */
+  rpe?: number
+}
+
+/** One session in the weekly rotation. */
+export interface ProgramDay {
+  id: string
+  name: string
+  kind: 'lift' | 'run'
+  /** Lifting prescription. */
+  slots?: ProgramSlot[]
+  /** Running prescription. */
+  run?: { type: RunType; minutes?: number; distanceMi?: number }
+}
+
+export type ProgressionKind = 'double' | 'linear' | 'rpe'
+
+export interface ProgramBlock {
+  id: string
+  name: string
+  /** ISO date the block starts — always a Monday. */
+  startDate: string
+  /** Length in weeks, deload included. */
+  weeks: number
+  /** 1-indexed deload week, or undefined for none. Conventionally the last. */
+  deloadWeek?: number
+  /** What the block is built for, so the intent stays visible. */
+  goal: GoalPrimary
+  progression: ProgressionKind
+  days: ProgramDay[]
+  /** Set when the block is retired, so history survives without cluttering. */
+  archived?: boolean
 }

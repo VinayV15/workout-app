@@ -132,7 +132,7 @@ function Shell() {
           {tab === 'lift' && <Lift />}
           {tab === 'run' && <RunScreen />}
           {tab === 'body' && <Body />}
-          {tab === 'coach' && <Coach />}
+          {tab === 'coach' && <Coach onNavigate={setTab} />}
           {tab === 'settings' && <Settings />}
         </div>
       </main>

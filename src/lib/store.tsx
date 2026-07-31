@@ -8,7 +8,19 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { AppData, BodyEntry, Exercise, Goals, Profile, Run, Workout, WorkoutTemplate } from './types'
+import type {
+  AppData,
+  BodyEntry,
+  Exercise,
+  Goals,
+  ProgramBlock,
+  ProgramDay,
+  Profile,
+  Run,
+  Workout,
+  WorkoutTemplate,
+} from './types'
+import { draftFromDay } from './program'
 import { DEFAULT_TEMPLATES } from './exercises'
 import { csvCell, todayISO } from './calc'
 import { setSkipRestore } from './firstRun'
@@ -36,6 +48,84 @@ const DATA_VERSION = 1
  */
 export const DRAFT_KEY = 'forge.draft.workout'
 
+/**
+ * A prescribed run handed over from the plan. Unlike the workout draft this is
+ * not an autosave — it is written once when a planned session is started and
+ * consumed by the run form, which is why it carries the block ids that stamp the
+ * saved run as satisfying that rotation slot.
+ */
+export const RUN_DRAFT_KEY = 'forge.draft.run'
+
+export interface RunDraft {
+  type: Run['type']
+  distanceMi?: number
+  minutes?: number
+  programBlockId: string
+  programDayId: string
+}
+
+export function setRunDraft(draft: RunDraft | null) {
+  try {
+    if (draft) localStorage.setItem(RUN_DRAFT_KEY, JSON.stringify(draft))
+    else localStorage.removeItem(RUN_DRAFT_KEY)
+  } catch {
+    /* storage denied — the run is simply logged without the plan link */
+  }
+}
+
+export function getRunDraft(): RunDraft | null {
+  try {
+    const raw = localStorage.getItem(RUN_DRAFT_KEY)
+    return raw ? (JSON.parse(raw) as RunDraft) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Stages a prescribed session for logging and reports which screen should open.
+ *
+ * Shared by the plan and the Today card rather than written twice, because the
+ * two would drift: this is where the guard against discarding an unfinished
+ * session lives, and only one of the two callers would have remembered it.
+ *
+ * Returns null when the user declined to replace work already in progress.
+ */
+export function startPlannedSession(
+  data: AppData,
+  block: ProgramBlock,
+  day: ProgramDay,
+  week: number,
+): 'lift' | 'run' | null {
+  if (day.kind === 'run') {
+    setRunDraft({
+      type: day.run?.type ?? 'easy',
+      distanceMi: day.run?.distanceMi,
+      minutes: day.run?.minutes,
+      programBlockId: block.id,
+      programDayId: day.id,
+    })
+    return 'run'
+  }
+
+  const existing = localStorage.getItem(DRAFT_KEY)
+  if (existing) {
+    try {
+      const draft = JSON.parse(existing) as { exercises?: { sets: unknown[] }[] }
+      if (
+        (draft.exercises ?? []).some((e) => e.sets.length > 0) &&
+        !confirm('You have an unfinished session in the log. Replace it with this one?')
+      ) {
+        return null
+      }
+    } catch {
+      /* unreadable draft — safe to replace */
+    }
+  }
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(draftFromDay(data, block, day, week, () => uid('w'))))
+  return 'lift'
+}
+
 /** Debounce before an edit triggers an automatic sync. */
 const AUTO_SYNC_DELAY_MS = 4000
 
@@ -62,6 +152,7 @@ export function defaultData(): AppData {
     body: [],
     customExercises: [],
     templates: DEFAULT_TEMPLATES,
+    programs: [],
     dismissed: {},
     sync: emptySyncMeta(),
   }
@@ -91,6 +182,7 @@ export function migrate(parsed: Partial<AppData>): AppData {
     body: parsed.body ?? [],
     customExercises: parsed.customExercises ?? [],
     templates: parsed.templates?.length ? parsed.templates : base.templates,
+    programs: parsed.programs ?? [],
     dismissed: parsed.dismissed ?? {},
     sync: {
       rev: parsed.sync?.rev ?? {},
@@ -155,6 +247,8 @@ interface Store {
   deleteCustomExercise: (id: string) => void
   saveTemplate: (t: WorkoutTemplate) => void
   deleteTemplate: (id: string) => void
+  saveProgram: (p: ProgramBlock) => void
+  deleteProgram: (id: string) => void
   dismiss: (recId: string, week: string) => void
   replaceAll: (d: AppData) => void
   reset: () => void
@@ -395,6 +489,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       deleteCustomExercise: (id) => remove('customExercises', id),
       saveTemplate: (t) => upsert('templates', t),
       deleteTemplate: (id) => remove('templates', id),
+      saveProgram: (p) => upsert('programs', p),
+      deleteProgram: (id) => remove('programs', id),
       dismiss: (recId, week) =>
         patchSettings((d) => ({ ...d, dismissed: { ...d.dismissed, [recId]: week } })),
       replaceAll: (d) => {
@@ -410,6 +506,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // waiting in the log and skips the restore-or-start-fresh question.
         try {
           localStorage.removeItem(DRAFT_KEY)
+          localStorage.removeItem(RUN_DRAFT_KEY)
         } catch {
           /* storage denied — nothing to clear */
         }
@@ -432,10 +529,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>
 }
 
-type ListKey = 'workouts' | 'runs' | 'body' | 'customExercises' | 'templates'
+type ListKey = 'workouts' | 'runs' | 'body' | 'customExercises' | 'templates' | 'programs'
 
 /** Kept in one place so a new list cannot be added to the type but missed below. */
-const LIST_KEYS: ListKey[] = ['workouts', 'runs', 'body', 'customExercises', 'templates']
+const LIST_KEYS: ListKey[] = ['workouts', 'runs', 'body', 'customExercises', 'templates', 'programs']
 
 /**
  * Re-applies any local record that was edited while a sync was in flight. The

@@ -2,6 +2,17 @@ import type { AppData, Muscle, Run } from './types'
 import { HARD_RUN_TYPES, MUSCLE_LABEL, MUSCLES } from './types'
 import { EXERCISES, exerciseMap } from './exercises'
 import {
+  activeBlock,
+  blockEndDate,
+  blockWeek,
+  dayMuscles,
+  isDeload,
+  nextDay,
+  prescribeDay,
+  weekProgress,
+  type Prescription,
+} from './program'
+import {
   acwr,
   addDays,
   bestVdot,
@@ -825,6 +836,25 @@ export function generateRecommendations(data: AppData): Recommendation[] {
     })
   }
 
+  // ---- Training block ----------------------------------------------------
+  // A block that has run out is invisible otherwise: the Today card silently
+  // reverts to reactive suggestions, which looks like the plan was forgotten.
+  const finished = (data.programs ?? [])
+    .filter((b) => !b.archived && blockWeek(b) === null && b.startDate <= todayISO())
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0]
+  if (finished && !activeBlock(data)) {
+    push({
+      id: 'block_finished',
+      tag: 'strength',
+      severity: 'warning',
+      title: `${finished.name} has finished — start the next block`,
+      detail: `The block ended ${daysAgo(blockEndDate(finished))} days ago, so sessions are being suggested reactively again.`,
+      why: 'Training in blocks beats training indefinitely because progression needs a beginning and an end: you accumulate work, deload, then start the next block from the loads you finished on. Running the same week forever is how a plateau starts.',
+      action: 'On the Coach tab, repeat this block (it restarts from your current loads) or pick a different structure.',
+      priority: 335,
+    })
+  }
+
   // Deduplicate, apply dismissals, sort.
   const thisWeekKey = weekStart(todayISO())
   const seen = new Set<string>()
@@ -850,6 +880,114 @@ export interface SessionSuggestion {
   exercises?: string[]
   /** Suggested run, when kind is 'run'. */
   run?: { type: Run['type']; distanceMi?: number; minutes?: number; paceHint?: string }
+  /**
+   * Set when the suggestion came from an active training block rather than from
+   * the reactive logic below it. Carries enough for the caller to open the session
+   * pre-filled with its prescribed loads.
+   */
+  plan?: {
+    blockId: string
+    blockName: string
+    dayId: string
+    week: number
+    weeks: number
+    deload: boolean
+    prescriptions: Prescription[]
+  }
+}
+
+/**
+ * The next session from an active training block, or null when no block is
+ * running — in which case the reactive logic below takes over unchanged.
+ */
+function plannedSession(data: AppData): SessionSuggestion | null {
+  const block = activeBlock(data)
+  if (!block) return null
+  const week = blockWeek(block)
+  if (week == null) return null
+  const deload = isDeload(block, week)
+  const { done, total } = weekProgress(data, block)
+  const day = nextDay(data, block)
+
+  if (!day) {
+    return {
+      kind: 'rest',
+      title: `Week ${week} of ${block.name} is complete`,
+      detail: `All ${total} sessions done. ${
+        week >= block.weeks
+          ? 'That finishes the block — review it on the Coach tab and start the next one.'
+          : 'Extra work now costs more in recovery than it returns. Rest, walk, or do some mobility work, and the rotation restarts on Monday.'
+      }`,
+    }
+  }
+
+  const remaining = total - done
+  const where = `Week ${week} of ${block.weeks}${deload ? ' — deload' : ''} · session ${done + 1} of ${total}`
+
+  if (day.kind === 'run') {
+    return {
+      kind: 'run',
+      title: day.name,
+      detail: deload
+        ? `${where}. Keep it genuinely easy — this week is for absorbing the last few weeks of work, not adding to it.`
+        : `${where}. ${remaining} session${remaining === 1 ? '' : 's'} left in the rotation this week.`,
+      run: {
+        type: day.run?.type ?? 'easy',
+        distanceMi: day.run?.distanceMi,
+        minutes: day.run?.minutes,
+        paceHint: runPaceHint(data, day.run?.type ?? 'easy'),
+      },
+      plan: {
+        blockId: block.id,
+        blockName: block.name,
+        dayId: day.id,
+        week,
+        weeks: block.weeks,
+        deload,
+        prescriptions: [],
+      },
+    }
+  }
+
+  const prescriptions = prescribeDay(data, block, day, week)
+  return {
+    kind: 'lift',
+    title: day.name,
+    detail: deload
+      ? `${where}. Same movements, two-thirds of the sets, 10% off the load, every set stopped well short of failure.`
+      : `${where}. ${remaining} session${remaining === 1 ? '' : 's'} left in the rotation this week. Loads below come from your last session on each lift.`,
+    muscles: dayMuscles(data, day),
+    exercises: prescriptions.map((p) => p.exercise?.name ?? p.slot.exerciseId),
+    plan: {
+      blockId: block.id,
+      blockName: block.name,
+      dayId: day.id,
+      week,
+      weeks: block.weeks,
+      deload,
+      prescriptions,
+    },
+  }
+}
+
+/** Pace guidance for a prescribed run, when a hard effort has calibrated it. */
+function runPaceHint(data: AppData, type: Run['type']): string {
+  const v = bestVdot(data.runs)
+  if (!v) return type === 'easy' || type === 'long' ? 'conversational pace' : 'comfortably hard, controlled breathing'
+  const paces = trainingPaces(v.value)
+  const factor = data.profile.units === 'metric' ? 0.621371192 : 1
+  const du = distanceUnit(data.profile.units)
+  const pace =
+    type === 'tempo'
+      ? paces.threshold
+      : type === 'interval'
+        ? paces.interval
+        : type === 'race'
+          ? paces.threshold
+          : type === 'long'
+            ? paces.easy
+            : paces.easy
+  return `${fmtDuration(pace * factor)}/${du}`
 }
 
 /**
@@ -867,6 +1005,9 @@ export function suggestToday(data: AppData): SessionSuggestion {
   const liftsLeft = data.goals.liftDaysPerWeek - liftsThisWeek
   const runsLeft = data.goals.runDaysPerWeek - runsThisWeek
 
+  // Fatigue outranks the plan, deliberately. A block that talks over your own
+  // recovery signals is worse than no block: it turns a missed session into an
+  // injury. The plan is consulted immediately after this, and nowhere before it.
   if (consec >= 6) {
     return {
       kind: 'rest',
@@ -874,6 +1015,9 @@ export function suggestToday(data: AppData): SessionSuggestion {
       detail: `You have trained ${consec} days straight. Recovery is where the adaptation actually happens — take the day, or keep it to a walk and mobility work.`,
     }
   }
+
+  const planned = plannedSession(data)
+  if (planned) return planned
 
   const vols = volumeTargets(data)
   const lagging = vols

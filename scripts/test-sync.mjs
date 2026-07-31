@@ -36,6 +36,7 @@ const base = (over = {}) => ({
   body: [],
   customExercises: [],
   templates: [],
+  programs: [],
   dismissed: {},
   sync: { rev: {}, deleted: {} },
   ...over,
@@ -214,6 +215,32 @@ console.log('\nlaunch gate')
     'a signed-out device that already has data is never interrupted',
     at({ hasLocalData: true, startFresh: false }) === 'app',
   )
+}
+
+// ---------------------------------------------------------------------------
+// Older documents. Every list added to the model is one that a backup exported
+// before it existed does not have, and merge must not crash on those.
+// ---------------------------------------------------------------------------
+console.log('\ndocuments predating a list')
+{
+  const old = base()
+  delete old.programs
+  delete old.templates
+  const r = mergeRows(old, [{ tbl: 'workouts', id: 'w1', payload: w('w1', 'Remote'), updated_at: T1, deleted: false }])
+  check('a document missing a whole list still merges', r.data.workouts.length === 1)
+  check('and the missing list is treated as empty', rowsToPush(r.data, new Map()).every((p) => p.tbl !== 'programs'))
+
+  const withBlock = base({ programs: [{ id: 'pb1', name: 'Block', startDate: '2026-07-06', weeks: 6, goal: 'muscle_gain', progression: 'double', days: [] }] })
+  const pushes = rowsToPush(withBlock, new Map())
+  check('a training block is pushed like any other record', pushes.some((p) => p.tbl === 'programs' && p.id === 'pb1'))
+
+  const pulled = mergeRows(base(), [
+    { tbl: 'programs', id: 'pb2', payload: { id: 'pb2', name: 'Remote block' }, updated_at: T1, deleted: false },
+  ])
+  check('and pulled like any other record', pulled.data.programs.length === 1 && pulled.applied === 1)
+
+  const deleted = mergeRows(withBlock, [{ tbl: 'programs', id: 'pb1', payload: null, updated_at: T3, deleted: true }])
+  check('and a deletion propagates', deleted.data.programs.length === 0)
 }
 
 // ---------------------------------------------------------------------------

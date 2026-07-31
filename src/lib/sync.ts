@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AppData, BodyEntry, Exercise, Run, Workout, WorkoutTemplate } from './types'
+import type { AppData, BodyEntry, Exercise, ProgramBlock, Run, Workout, WorkoutTemplate } from './types'
 
 /**
  * Cross-device sync against a Supabase project.
@@ -17,10 +17,24 @@ import type { AppData, BodyEntry, Exercise, Run, Workout, WorkoutTemplate } from
  * evolve and makes the row-level security policy a one-liner.
  */
 
-export type SyncTable = 'workouts' | 'runs' | 'body' | 'customExercises' | 'templates' | 'settings'
+export type SyncTable =
+  | 'workouts'
+  | 'runs'
+  | 'body'
+  | 'customExercises'
+  | 'templates'
+  | 'programs'
+  | 'settings'
 
-/** Tables that are plain lists of records with `id` fields. */
-const LIST_TABLES = ['workouts', 'runs', 'body', 'customExercises', 'templates'] as const
+/**
+ * Tables that are plain lists of records with `id` fields.
+ *
+ * Adding one needs no database migration: the remote table is keyed by
+ * (user_id, tbl, id) with the record itself in a jsonb payload, so a new kind of
+ * record is just a new value of `tbl`. A device still running the previous
+ * version ignores rows it does not know about rather than failing on them.
+ */
+const LIST_TABLES = ['workouts', 'runs', 'body', 'customExercises', 'templates', 'programs'] as const
 type ListTable = (typeof LIST_TABLES)[number]
 
 /** The single id used for the settings record (profile + goals + dismissals). */
@@ -289,18 +303,27 @@ export function emptySyncMeta() {
   return { rev: {} as Record<string, string>, deleted: {} as Record<string, string> }
 }
 
+/**
+ * The `?? []` is load-bearing. Every list gained here is a list that older
+ * documents do not have, and merge runs against whatever it is handed — a backup
+ * exported before the field existed, or a payload from a device on the previous
+ * version. Returning undefined turned that into a crash mid-sync, which is the
+ * worst possible moment for one.
+ */
 function listOf(data: AppData, tbl: ListTable): { id: string }[] {
   switch (tbl) {
     case 'workouts':
-      return data.workouts
+      return data.workouts ?? []
     case 'runs':
-      return data.runs
+      return data.runs ?? []
     case 'body':
-      return data.body
+      return data.body ?? []
     case 'customExercises':
-      return data.customExercises
+      return data.customExercises ?? []
     case 'templates':
-      return data.templates
+      return data.templates ?? []
+    case 'programs':
+      return data.programs ?? []
   }
 }
 
@@ -320,6 +343,9 @@ function setList(data: AppData, tbl: ListTable, items: unknown[]) {
       break
     case 'templates':
       data.templates = items as WorkoutTemplate[]
+      break
+    case 'programs':
+      data.programs = items as ProgramBlock[]
       break
   }
 }

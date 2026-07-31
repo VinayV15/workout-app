@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { uid, useStore } from '../lib/store'
+import { getRunDraft, setRunDraft, uid, useStore } from '../lib/store'
 import type { Run, RunType } from '../lib/types'
 import { RUN_TYPE_LABEL } from '../lib/types'
 import { Button, Card, Empty, Field, Row, SectionTitle, Segmented, SelectField, Sheet, Stat } from '../components/ui'
@@ -56,10 +56,18 @@ function LogRun({ onSaved }: { onSaved: () => void }) {
   const units = data.profile.units
   const du = distanceUnit(units)
 
+  // A run started from the plan arrives with its type and target already chosen.
+  // Read once on mount: after that the form is the user's, and re-reading would
+  // fight their edits.
+  const [prescribed] = useState(getRunDraft)
+  const planBlock = prescribed ? data.programs.find((b) => b.id === prescribed.programBlockId) : undefined
+
   const [date, setDate] = useState(todayISO())
-  const [distance, setDistance] = useState('')
-  const [duration, setDuration] = useState('')
-  const [type, setType] = useState<RunType>('easy')
+  const [distance, setDistance] = useState(
+    prescribed?.distanceMi ? String(round(dispDistance(prescribed.distanceMi, units), 2)) : '',
+  )
+  const [duration, setDuration] = useState(prescribed?.minutes ? `${prescribed.minutes}:00` : '')
+  const [type, setType] = useState<RunType>(prescribed?.type ?? 'easy')
   const [hr, setHr] = useState('')
   const [elev, setElev] = useState('')
   const [rpe, setRpe] = useState('')
@@ -82,7 +90,12 @@ function LogRun({ onSaved }: { onSaved: () => void }) {
       elevationFt: elev ? storeElevation(Number(elev), units) : undefined,
       rpe: rpe ? Number(rpe) : undefined,
       note: note.trim() || undefined,
+      // Stamps the run as satisfying the block's rotation slot, which is what
+      // advances the plan to the next session.
+      programBlockId: prescribed?.programBlockId,
+      programDayId: prescribed?.programDayId,
     })
+    setRunDraft(null)
     setDistance('')
     setDuration('')
     setHr('')
@@ -96,6 +109,29 @@ function LogRun({ onSaved }: { onSaved: () => void }) {
 
   return (
     <div className="space-y-4">
+      {prescribed && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs" style={{ borderColor: 'color-mix(in oklab, var(--series-1) 40%, transparent)' }}>
+          <span className="min-w-0">
+            <span className="font-medium">Prescribed run</span>
+            <span className="mt-0.5 block text-[11px] text-ink-2">
+              {RUN_TYPE_LABEL[prescribed.type]}
+              {prescribed.minutes ? ` · ${prescribed.minutes} min` : ''}
+              {planBlock ? ` · ${planBlock.name}` : ''}. Saving it advances your plan.
+            </span>
+          </span>
+          <button
+            onClick={() => {
+              setRunDraft(null)
+              onSaved()
+            }}
+            className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-ink-3 hover:text-ink"
+            title="Log this run without linking it to the plan"
+          >
+            Unlink
+          </button>
+        </div>
+      )}
+
       <Card className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />

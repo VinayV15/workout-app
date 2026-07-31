@@ -1,8 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../lib/store'
-import { Button, Card, Chip, SectionTitle, SeverityBadge, severityColor } from '../components/ui'
+import { Button, Card, Chip, SectionTitle, Segmented, SeverityBadge, severityColor } from '../components/ui'
 import { TargetBars } from '../components/charts'
-import { generateRecommendations, suggestToday, volumeBar, volumeTargets, type RecTag } from '../lib/recommend'
+import Plan from './Plan'
+import {
+  generateRecommendations,
+  volumeBar,
+  volumeTargets,
+  type RecTag,
+  type Recommendation,
+} from '../lib/recommend'
 import { GOAL_LABEL } from '../lib/types'
 import { nutritionTargets, todayISO, weekStart } from '../lib/calc'
 
@@ -15,13 +22,41 @@ const TAG_LABEL: Record<RecTag, string> = {
   habit: 'Consistency',
 }
 
-export default function Coach() {
+/**
+ * The coaching tab has two halves that answer different questions: the plan says
+ * what to do next, the advice says what is going wrong. They live together
+ * because reading one without the other is how you end up following a plan that
+ * no longer fits.
+ */
+export default function Coach({ onNavigate }: { onNavigate: (t: 'lift' | 'run') => void }) {
+  const [tab, setTab] = useState<'plan' | 'advice'>('plan')
+  const { data } = useStore()
+  const recs = useMemo(() => generateRecommendations(data), [data])
+  const needsAttention = recs.filter((r) => r.severity !== 'good' && r.severity !== 'info').length
+
+  return (
+    <div className="space-y-5">
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'plan', label: 'Plan' },
+          { value: 'advice', label: needsAttention > 0 ? `Advice · ${needsAttention}` : 'Advice' },
+        ]}
+      />
+      {/* `recs` is passed down rather than recomputed: generating them walks the
+          whole lifting history per tracked exercise, and the badge above already
+          needed the list. */}
+      {tab === 'plan' ? <Plan onNavigate={onNavigate} /> : <Advice recs={recs} />}
+    </div>
+  )
+}
+
+function Advice({ recs }: { recs: Recommendation[] }) {
   const { data, dismiss } = useStore()
   const [filter, setFilter] = useState<RecTag | 'all'>('all')
 
-  const recs = useMemo(() => generateRecommendations(data), [data])
   const targets = useMemo(() => volumeTargets(data), [data])
-  const today = useMemo(() => suggestToday(data), [data])
   const nut = useMemo(() => nutritionTargets(data), [data])
 
   const filtered = filter === 'all' ? recs : recs.filter((r) => r.tag === filter)
@@ -40,25 +75,8 @@ export default function Coach() {
     <div className="space-y-6">
       <section>
         <SectionTitle sub={`Everything below is derived from your logs, weighed against your goal: ${GOAL_LABEL[data.goals.primary].toLowerCase()}`}>
-          Coach
+          What to change
         </SectionTitle>
-
-        <Card className="mb-4">
-          <div className="mb-1 text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--series-1)' }}>
-            Next session
-          </div>
-          <h3 className="text-base font-semibold tracking-tight">{today.title}</h3>
-          <p className="mt-1 text-xs leading-relaxed text-ink-2">{today.detail}</p>
-          {today.exercises && (
-            <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {today.exercises.map((e) => (
-                <span key={e} className="rounded-full bg-surface-2 px-2.5 py-1 text-[11px] text-ink-2">
-                  {e}
-                </span>
-              ))}
-            </div>
-          )}
-        </Card>
 
         <div className="no-scrollbar -mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4">
           <Chip active={filter === 'all'} onClick={() => setFilter('all')}>
@@ -155,6 +173,11 @@ export default function Coach() {
         <SectionTitle sub="How the coaching works">Method</SectionTitle>
         <Card>
           <div className="space-y-2 text-xs leading-relaxed text-ink-2">
+            <p>
+              <span className="font-medium text-ink">The plan</span> prescribes loads by double progression, read out of
+              your log rather than stored: the load holds until every set reaches the top of its rep range, then steps
+              up. Nothing to keep in sync, and a bad session repeats the week instead of compounding into a miss.
+            </p>
             <p>
               <span className="font-medium text-ink">Volume targets</span> come from your goal and the number of lifting
               days you train, then get scaled so the total is something you can actually finish. Sets count fully for the

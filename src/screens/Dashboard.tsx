@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useStore } from '../lib/store'
+import { startPlannedSession, useStore } from '../lib/store'
 import { Button, Card, Meter, SectionTitle, SeverityBadge, Stat, severityColor } from '../components/ui'
 import { ChartFrame, SERIES, TimeSeries, niceDomain } from '../components/charts'
 import { generateRecommendations, suggestToday, weeklyScore } from '../lib/recommend'
@@ -34,6 +34,12 @@ export default function Dashboard({
   const suggestion = useMemo(() => suggestToday(data), [data])
   const recs = useMemo(() => generateRecommendations(data), [data])
   const score = useMemo(() => weeklyScore(data), [data])
+
+  // Resolved from the suggestion rather than recomputed, so the card can only ever
+  // start the session it is actually displaying.
+  const plan = suggestion.plan
+  const block = plan ? data.programs.find((b) => b.id === plan.blockId) : undefined
+  const day = block?.days.find((d) => d.id === plan?.dayId)
 
   const weight = latestWeight(data.body)
   const bf = latestBodyFat(data.body, data.profile)
@@ -106,26 +112,63 @@ export default function Dashboard({
         <SectionTitle sub={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}>
           Today
         </SectionTitle>
-        <Card className="border-l-4" >
+        <Card>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="mb-1 text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--series-1)' }}>
-                {suggestion.kind === 'rest' ? 'Recovery' : suggestion.kind === 'lift' ? 'Strength' : 'Running'}
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--series-1)' }}>
+                  {plan ? plan.blockName : suggestion.kind === 'rest' ? 'Recovery' : suggestion.kind === 'lift' ? 'Strength' : 'Running'}
+                </span>
+                {plan && (
+                  <span className="text-[10px] text-ink-3">
+                    week {plan.week}/{plan.weeks}
+                  </span>
+                )}
+                {plan?.deload && (
+                  <span
+                    className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase"
+                    style={{ color: 'var(--series-4)', background: 'color-mix(in oklab, var(--series-4) 14%, transparent)' }}
+                  >
+                    Deload
+                  </span>
+                )}
               </div>
               <h3 className="text-lg leading-snug font-semibold tracking-tight">{suggestion.title}</h3>
               <p className="mt-1.5 text-xs leading-relaxed text-ink-2">{suggestion.detail}</p>
 
-              {suggestion.exercises && (
-                <ul className="mt-3 grid gap-1 sm:grid-cols-2">
-                  {suggestion.exercises.map((e) => (
-                    <li key={e} className="flex items-center gap-1.5 text-xs text-ink-2">
-                      <span aria-hidden className="text-ink-3">
-                        ·
+              {/* With a plan running, the prescribed loads are the point of the
+                  card — a bare exercise list would send you to the Coach tab to
+                  find the numbers you are about to lift. */}
+              {plan && plan.prescriptions.length > 0 ? (
+                <ul className="mt-3 space-y-1">
+                  {plan.prescriptions.map((p) => (
+                    <li key={p.slot.exerciseId} className="flex items-baseline justify-between gap-3 text-xs">
+                      <span className="min-w-0 truncate text-ink-2">{p.exercise?.name ?? p.slot.exerciseId}</span>
+                      <span className="tabular shrink-0 text-ink">
+                        {p.sets} × {p.targetReps}
+                        {p.loadLb != null && p.loadLb > 0 && (
+                          <span className="text-ink-3">
+                            {' '}
+                            @ {round(dispWeight(p.loadLb, units), 1)} {wu}
+                          </span>
+                        )}
                       </span>
-                      {e}
                     </li>
                   ))}
                 </ul>
+              ) : (
+                suggestion.exercises && (
+                  <ul className="mt-3 grid gap-1 sm:grid-cols-2">
+                    {suggestion.exercises.map((e) => (
+                      <li key={e} className="flex items-center gap-1.5 text-xs text-ink-2">
+                        <span aria-hidden className="text-ink-3">
+                          ·
+                        </span>
+                        {e}
+                      </li>
+                    ))}
+                  </ul>
+                )
               )}
 
               {suggestion.run && (
@@ -153,13 +196,31 @@ export default function Dashboard({
             </div>
           </div>
 
-          <div className="mt-4 flex gap-2">
-            {/* Both are always available — the suggestion is a recommendation,
-                not a restriction on what you can log. */}
-            <Button variant={suggestion.kind === 'lift' ? 'primary' : 'secondary'} onClick={() => onNavigate('lift')}>
+          {/* Everything stays available — the suggestion is a recommendation, not
+              a restriction on what you can log. A plan adds a pre-filled shortcut
+              in front of the usual buttons; it never removes one. */}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {plan && block && day && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const dest = startPlannedSession(data, block, day, plan.week)
+                  if (dest) onNavigate(dest)
+                }}
+              >
+                Start {suggestion.kind === 'run' ? 'this run' : 'this session'}
+              </Button>
+            )}
+            <Button
+              variant={!plan && suggestion.kind === 'lift' ? 'primary' : 'secondary'}
+              onClick={() => onNavigate('lift')}
+            >
               Log a lift
             </Button>
-            <Button variant={suggestion.kind === 'run' ? 'primary' : 'secondary'} onClick={() => onNavigate('run')}>
+            <Button
+              variant={!plan && suggestion.kind === 'run' ? 'primary' : 'secondary'}
+              onClick={() => onNavigate('run')}
+            >
               Log a run
             </Button>
             <Button variant="ghost" onClick={() => onNavigate('body')}>

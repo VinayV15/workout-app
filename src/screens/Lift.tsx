@@ -123,8 +123,34 @@ function LogTab() {
     setWorkout(emptyWorkout())
   }
 
+  const planBlock = workout.programBlockId ? data.programs.find((b) => b.id === workout.programBlockId) : undefined
+
   return (
     <div className="space-y-4">
+      {planBlock && (
+        <div
+          className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs"
+          style={{ borderColor: 'color-mix(in oklab, var(--series-1) 40%, transparent)' }}
+        >
+          <span className="min-w-0">
+            <span className="font-medium">{workout.name || 'Planned session'}</span>
+            <span className="mt-0.5 block text-[11px] text-ink-2">
+              From {planBlock.name}. Sets and loads are pre-filled — correct what actually happened. Saving advances
+              your plan to the next session.
+            </span>
+          </span>
+          <button
+            onClick={() =>
+              setWorkout((w) => ({ ...w, programBlockId: undefined, programDayId: undefined }))
+            }
+            className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-ink-3 hover:text-ink"
+            title="Keep the sets but do not count this against the plan"
+          >
+            Unlink
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-3">
         <Field
           label="Date"

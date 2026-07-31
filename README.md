@@ -314,9 +314,39 @@ body fat to within a few percent — that is an automated test, not a claim.
 picture of composition, and judge fine detail from the mirror. Everything is generated procedurally — no model
 file, nothing to license — so it reads as an anatomical diagram rather than a sculpted figure.
 
+## Training blocks
+
+The Coach tab has two halves. **Plan** says what to do next; **Advice** says what is going wrong. The advice is
+reactive by design — it catches problems — but progressive overload needs a decision made *in advance* about
+what load to attempt next, and a block is that decision written down.
+
+Pick a structure (Upper/Lower 4-day, Full-body 3-day, PPL 6-day, or a lift-and-run hybrid) and you get a
+4–6 week block with a deload in the final week. From then on the only interaction is **Start this session**,
+which opens the log with every set, rep target and load already filled in — you correct what actually happened
+and save. Three things make it more than a checklist:
+
+- **Prescriptions are read out of your log, never stored.** There is no "current weight" field to go stale, so
+  editing history or logging on another device changes tomorrow's targets automatically, and a block that syncs
+  to a new device works immediately. Repeating a block picks up from the loads you finished on, for free.
+- **Rotation, not a calendar.** Sessions advance when you train, not when the week does. Miss Tuesday and it is
+  still waiting rather than putting you behind — the difference between a plan you keep and one you abandon in
+  week 2. Log something outside the plan and it simply does not count against it.
+- **Fatigue still wins.** The plan is consulted immediately *after* the rest-day check and nowhere before it. A
+  block that talks over your own recovery signals turns a missed session into an injury.
+
+Progression is **double progression**: the load holds until every working set reaches the top of its rep range,
+then steps up (5 lb on compounds, 2.5 lb on isolation) and drops back to the bottom of the range. It reads the
+*lowest* rep count across your top sets, not the best one — judging on the best set lets the load run away from
+you. One short set repeats the week. Warm-ups are excluded. Deload weeks cut to two-thirds of the sets at 90% of
+the load. Every prescription will tell you where its number came from if you tap it.
+
+Adding this needed no database migration: the sync table stores each record as a jsonb payload keyed by
+`(user_id, tbl, id)`, so a training block is just a new value of `tbl`, and a device on the previous version
+ignores rows it does not recognise instead of failing on them.
+
 ## What the coach actually does
 
-The Coach tab reads all of it and returns a ranked list — each item says what to change, what the data says,
+The Advice half returns a ranked list — each item says what to change, what the data says,
 *why* it matters, and the specific next action. It watches for:
 
 - Muscle groups below their weekly set target, and any that have had no direct work at all
@@ -329,8 +359,12 @@ The Coach tab reads all of it and returns a ranked list — each item says what 
 - Distance to your goal race time, and the pace work that closes it
 - Calorie and protein targets, recalculated from your current weight, body fat and logged training
 
-The **Today** card picks your next session: whichever of lifting or running is furthest behind the week's
-plan, led by the muscle groups furthest below target — or a rest day when fatigue markers say so.
+- A training block that has run out, so the plan never lapses silently
+
+The **Today** card picks your next session. With a block running that is the next session in its rotation, with
+its prescribed loads on the card and a button that opens it pre-filled. Without one it falls back to whichever of
+lifting or running is furthest behind the week's plan, led by the muscle groups furthest below target. Either
+way, a rest day wins when the fatigue markers say so.
 
 ### The numbers behind it
 
@@ -339,6 +373,8 @@ plan, led by the muscle groups furthest below target — or a rest day when fati
 | Estimated 1RM | Epley, capped at 12 reps |
 | Set volume | Direct muscles 1.0 per set, assisting muscles 0.5 |
 | Weekly set targets | Goal-scaled landmarks, then capped to what your training days can hold |
+| Load progression | Double progression on the lowest rep count across top sets; 5 lb compound / 2.5 lb isolation |
+| Deload | Two-thirds of the sets at 90% of the load |
 | Maintenance calories | Mifflin–St Jeor × activity factor + measured training burn |
 | Fat-loss rate target | 0.5–1.0% of bodyweight per week |
 | Protein | 2.0–2.6 g per kg of lean mass, highest in a deficit |
@@ -362,6 +398,7 @@ src/lib/types.ts       data model
 src/lib/exercises.ts   exercise library, muscle + pattern mapping, templates
 src/lib/calc.ts        all the sports-science math (1RM, VDOT, ACWR, Navy BF, TDEE, trends)
 src/lib/recommend.ts   the coaching engine and volume targets
+src/lib/program.ts     training blocks: rotation, double progression, deloads, presets
 src/lib/store.tsx      on-device persistence, change tracking, backup and restore
 src/lib/physique.ts    measurements -> the three body shells (frame / lean / full)
 src/lib/bodyMesh.ts    the smooth outer shell (the fat layer)
@@ -374,11 +411,13 @@ src/components/BodyScan.tsx  the three.js wireframe renderer
 src/lib/sync.ts        Supabase sync: auth, pull, record-by-record merge, push
 supabase/migrations/    the table and security policy sync needs, as a migration
 scripts/test-sync.mjs  sync merge tests (npm test)
+scripts/test-coach.mjs     fatigue, load accounting, units and CSV escaping
+scripts/test-program.mjs   block rotation, progression arithmetic and deloads
 scripts/test-physique.mjs  physique model + mesh tests
 src/components/        UI primitives and chart wrappers
-src/screens/           Today, Lift, Run, Body, Coach, Settings, Onboarding
+src/screens/           Today, Lift, Run, Body, Coach (Plan + Advice), Settings, Onboarding
 scripts/make-icons.mjs generates the app icons (npm run icons)
 ```
 
-`npm run build` typechecks and bundles. There are no paid services, API keys or external calls anywhere in
-the app.
+`npm run build` typechecks and bundles; `npm run typecheck` checks without emitting anything. There are no paid
+services, API keys or external calls anywhere in the app.
