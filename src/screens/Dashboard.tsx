@@ -203,6 +203,10 @@ export default function Dashboard({
             {plan && block && day && (
               <Button
                 variant="primary"
+                // Its own row on a phone: a fourth button makes the row wrap, and
+                // the ghost-styled one that lands alone underneath reads as a
+                // stray link rather than an action.
+                className="w-full sm:w-auto"
                 onClick={() => {
                   const dest = startPlannedSession(data, block, day, plan.week)
                   if (dest) onNavigate(dest)

@@ -195,14 +195,20 @@ function ActiveBlock({
                   <Meter
                     value={isFuture ? 0 : r.done}
                     target={r.total}
+                    // The meter tints its own track from the fill colour, so the
+                    // colour has to be neutral for a week that has not happened:
+                    // amber at 18% across an empty bar reads as a missed week, not
+                    // a future one.
                     color={
-                      isDeload(block, r.week)
-                        ? 'var(--series-4)'
-                        : r.done >= r.total
-                          ? 'var(--good)'
-                          : isNow
-                            ? SERIES.s1
-                            : 'var(--warning)'
+                      isFuture
+                        ? 'var(--text-muted)'
+                        : isDeload(block, r.week)
+                          ? 'var(--series-4)'
+                          : r.done >= r.total
+                            ? 'var(--good)'
+                            : isNow
+                              ? SERIES.s1
+                              : 'var(--warning)'
                     }
                   />
                 </div>
