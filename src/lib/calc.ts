@@ -402,18 +402,30 @@ export function exercisePR(exerciseId: string, data: AppData) {
  * Trend in estimated 1RM over the trailing window, as percent change per week.
  * Returns null when there aren't at least 3 sessions to fit.
  */
+export function strengthTrendFit(history: ExerciseProgressPoint[], days = 42): TrendFit | null {
+  const usable = history.filter((h) => h.e1rm > 0)
+  const today = todayISO()
+  for (const step of WIDEN_STEPS) {
+    const window = Math.round(days * step)
+    const pts = usable.filter((h) => h.date >= addDays(today, -window))
+    if (pts.length < MIN_POINTS) continue
+    const x0 = fromISO(pts[0].date).getTime()
+    const ys = pts.map((p) => p.e1rm)
+    const slope = linRegSlope(
+      pts.map((p) => (fromISO(p.date).getTime() - x0) / 86400000),
+      ys,
+    )
+    const mean = ys.reduce((a, b) => a + b, 0) / ys.length
+    if (slope === null || mean <= 0) continue
+    // Percent of current load per week, so a 300lb squat and a 30lb curl are
+    // comparable.
+    return { perWeek: (slope * 7 * 100) / mean, days: window, points: pts.length, widened: step > 1 }
+  }
+  return null
+}
+
 export function strengthTrend(history: ExerciseProgressPoint[], days = 42): number | null {
-  const cutoff = addDays(todayISO(), -days)
-  const pts = history.filter((h) => h.date >= cutoff && h.e1rm > 0)
-  if (pts.length < 3) return null
-  const x0 = fromISO(pts[0].date).getTime()
-  const xs = pts.map((p) => (fromISO(p.date).getTime() - x0) / 86400000)
-  const ys = pts.map((p) => p.e1rm)
-  const slope = linRegSlope(xs, ys)
-  if (slope === null) return null
-  const mean = ys.reduce((a, b) => a + b, 0) / ys.length
-  if (mean <= 0) return null
-  return (slope * 7 * 100) / mean // % of current load per week
+  return strengthTrendFit(history, days)?.perWeek ?? null
 }
 
 // ---------------------------------------------------------------------------
@@ -540,34 +552,94 @@ export function latestBodyFat(body: BodyEntry[], profile: Profile): { pct: numbe
 }
 
 /**
+ * A trend fit, and the window it actually came from.
+ *
+ * The window matters as much as the number. A rate quoted as "your 4-week trend"
+ * when it was fitted over eleven weeks is a lie, and the reverse — refusing to
+ * report anything because four weeks held two weigh-ins — throws away a perfectly
+ * good answer that is sitting in the log.
+ */
+export interface TrendFit {
+  /** Change per week, in the series' own units. */
+  perWeek: number
+  /** Days actually spanned by the window used. */
+  days: number
+  /** Data points the fit is based on. */
+  points: number
+  /** True when the standard window was too sparse and the fit reached further back. */
+  widened: boolean
+}
+
+/** How far a fit may reach back when the standard window is too sparse. */
+const WIDEN_STEPS = [1, 2, 3.5, 6] as const
+/** Below this, a regression is noise rather than a trend. */
+const MIN_POINTS = 3
+
+/**
+ * Fits a trend over the standard window, widening it only if that window cannot
+ * support a fit.
+ *
+ * This is the "keep the diagnostic fixed, but use the history you have" rule: the
+ * standard window is always tried first and wins whenever it works, so a
+ * well-logged user gets exactly the calibrated figure. Someone who weighs in
+ * fortnightly still gets an answer instead of silence, and it is labelled with the
+ * window it really used.
+ */
+function fitTrend<T extends { date: string }>(
+  items: T[],
+  value: (t: T) => number | null | undefined,
+  baseDays: number,
+): TrendFit | null {
+  const usable = items.filter((i) => value(i) != null).sort((a, b) => a.date.localeCompare(b.date))
+  const today = todayISO()
+  for (const step of WIDEN_STEPS) {
+    const days = Math.round(baseDays * step)
+    const cutoff = addDays(today, -days)
+    const pts = usable.filter((i) => i.date >= cutoff)
+    if (pts.length < MIN_POINTS) continue
+    const x0 = fromISO(pts[0].date).getTime()
+    const slope = linRegSlope(
+      pts.map((p) => (fromISO(p.date).getTime() - x0) / 86400000),
+      pts.map((p) => value(p)!),
+    )
+    if (slope === null) continue
+    return { perWeek: slope * 7, days, points: pts.length, widened: step > 1 }
+  }
+  return null
+}
+
+/**
  * Rate of bodyweight change in lb/week, fitted over the trailing window.
  * Regression rather than first-vs-last so daily water swings don't dominate.
  */
+export function weightTrend(body: BodyEntry[], days = 28): TrendFit | null {
+  return fitTrend(body, (b) => b.weightLb, days)
+}
+
 export function weightRateLbPerWeek(body: BodyEntry[], days = 28): number | null {
-  const cutoff = addDays(todayISO(), -days)
-  const pts = body
-    .filter((b) => b.weightLb && b.date >= cutoff)
-    .sort((a, b) => a.date.localeCompare(b.date))
-  if (pts.length < 3) return null
-  const x0 = fromISO(pts[0].date).getTime()
-  const xs = pts.map((p) => (fromISO(p.date).getTime() - x0) / 86400000)
-  const ys = pts.map((p) => p.weightLb!)
-  const slope = linRegSlope(xs, ys)
-  return slope === null ? null : slope * 7
+  return weightTrend(body, days)?.perWeek ?? null
 }
 
 /** Same fit, applied to lean mass, to catch muscle loss during a cut. */
+export function leanTrend(body: BodyEntry[], profile: Profile, days = 56): TrendFit | null {
+  return fitTrend(
+    body,
+    (b) => {
+      const bf = b.bodyFatPct ?? navyBodyFat(b, profile)
+      return b.weightLb && bf != null ? leanMass(b.weightLb, bf) : null
+    },
+    days,
+  )
+}
+
 export function leanRateLbPerWeek(body: BodyEntry[], profile: Profile, days = 56): number | null {
-  const cutoff = addDays(todayISO(), -days)
-  const pts = body
-    .filter((b) => b.weightLb && (b.bodyFatPct ?? navyBodyFat(b, profile)) != null && b.date >= cutoff)
-    .sort((a, b) => a.date.localeCompare(b.date))
-  if (pts.length < 3) return null
-  const x0 = fromISO(pts[0].date).getTime()
-  const xs = pts.map((p) => (fromISO(p.date).getTime() - x0) / 86400000)
-  const ys = pts.map((p) => leanMass(p.weightLb!, (p.bodyFatPct ?? navyBodyFat(p, profile))!))
-  const slope = linRegSlope(xs, ys)
-  return slope === null ? null : slope * 7
+  return leanTrend(body, profile, days)?.perWeek ?? null
+}
+
+/** How to describe a fit's window in a sentence. */
+export function describeWindow(fit: TrendFit): string {
+  const weeks = Math.round(fit.days / 7)
+  return weeks <= 1 ? `${fit.days} days` : `${weeks} weeks`
 }
 
 // ---------------------------------------------------------------------------

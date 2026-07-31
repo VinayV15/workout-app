@@ -31,8 +31,8 @@ import { ChartFrame, SERIES, TargetBars, TimeSeries, niceDomain } from '../compo
 import ExerciseGuide from '../components/ExerciseGuide'
 import { guideFor } from '../lib/exerciseGuide'
 import {
-  addDays,
   bodyweightOn,
+  daysBetween,
   dispWeight,
   e1rm,
   exerciseHistory,
@@ -42,14 +42,14 @@ import {
   muscleSetVolume,
   round,
   storeWeight,
-  strengthTrend,
   todayISO,
-  weekStart,
   weightUnit,
-  withinDays,
   workingSets,
 } from '../lib/calc'
 import { volumeBar, volumeTargets } from '../lib/recommend'
+import RangePicker, { useDateRange } from '../components/RangePicker'
+import { bucketFor, bucketLabel, bucketStart, withinRange } from '../lib/dateRange'
+import { pctPerWeekOverRange } from '../lib/trends'
 
 type SubTab = 'log' | 'history' | 'progress' | 'volume'
 
@@ -905,16 +905,27 @@ function HistoryTab({ onEdit }: { onEdit: () => void }) {
   const units = data.profile.units
   const map = useMemo(() => exerciseMap(data.customExercises), [data.customExercises])
   const [open, setOpen] = useState<string | null>(null)
-  const sorted = [...data.workouts].sort((a, b) => b.date.localeCompare(a.date))
-
-  if (sorted.length === 0) {
-    return <Empty title="No sessions yet" body="Saved workouts appear here, newest first, with every set you logged." />
-  }
-
+  const { range, resolved, setRange } = useDateRange('lift')
+  const earliest = useMemo(() => [...data.workouts].map((w) => w.date).sort()[0] ?? null, [data.workouts])
+  const sorted = useMemo(
+    () => withinRange(data.workouts, resolved).sort((a, b) => b.date.localeCompare(a.date)),
+    [data.workouts, resolved],
+  )
   const selected = sorted.find((w) => w.id === open)
 
   return (
     <div className="space-y-2">
+      <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+      {sorted.length === 0 && (
+        <Empty
+          title={data.workouts.length ? 'No sessions in this range' : 'No sessions yet'}
+          body={
+            data.workouts.length
+              ? 'Widen the range or choose All time to see the sessions you have logged.'
+              : 'Saved workouts appear here, newest first, with every set you logged.'
+          }
+        />
+      )}
       {sorted.map((w) => {
         const sets = w.exercises.reduce((a, e) => a + workingSets(e.sets).length, 0)
         const bw = bodyweightOn(data.body, w.date) ?? 0
@@ -1037,6 +1048,8 @@ function ProgressTab() {
 
   const [selected, setSelected] = useState<string | null>(tracked[0] ?? null)
   const id = selected ?? tracked[0] ?? null
+  const { range, resolved, setRange } = useDateRange('progress')
+  const earliest = useMemo(() => [...data.workouts].map((w) => w.date).sort()[0] ?? null, [data.workouts])
 
   if (!id) {
     return (
@@ -1047,9 +1060,11 @@ function ProgressTab() {
     )
   }
 
-  const history = exerciseHistory(id, data)
+  const allHistory = exerciseHistory(id, data)
+  const history = withinRange(allHistory, resolved)
   const pr = exercisePR(id, data)
-  const trend = strengthTrend(history)
+  // Trend over the selected window, not a fixed six weeks.
+  const trend = pctPerWeekOverRange(history, (h) => h.e1rm)
   const chart = history.map((h) => ({
     date: h.date,
     e1rm: round(dispWeight(h.e1rm, units), 1),
@@ -1058,6 +1073,8 @@ function ProgressTab() {
 
   return (
     <div className="space-y-4">
+      <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+
       <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
         {tracked.map((t) => (
           <Chip key={t} active={t === id} onClick={() => setSelected(t)}>
@@ -1068,7 +1085,7 @@ function ProgressTab() {
 
       <div className="grid grid-cols-3 gap-2.5">
         <div className="card p-3">
-          <div className="text-[11px] text-ink-3">Best estimated 1RM</div>
+          <div className="text-[11px] text-ink-3">Best e1RM (all time)</div>
           <div className="mt-1 text-xl font-semibold">
             {round(dispWeight(pr.bestE1rm, units), 1)} <span className="text-xs text-ink-3">{wu}</span>
           </div>
@@ -1082,14 +1099,14 @@ function ProgressTab() {
           <div className="mt-0.5 text-[11px] text-ink-3">{pr.heaviestReps} reps</div>
         </div>
         <div className="card p-3">
-          <div className="text-[11px] text-ink-3">6-week trend</div>
+          <div className="text-[11px] text-ink-3">Trend</div>
           <div
             className="mt-1 text-xl font-semibold"
             style={{ color: trend == null ? undefined : trend > 0.1 ? 'var(--delta-good)' : trend < -0.1 ? 'var(--critical)' : undefined }}
           >
             {trend == null ? '—' : `${trend > 0 ? '+' : ''}${round(trend, 1)}%`}
           </div>
-          <div className="mt-0.5 text-[11px] text-ink-3">per week</div>
+          <div className="mt-0.5 text-[11px] text-ink-3">per week · {resolved.label.toLowerCase()}</div>
         </div>
       </div>
 
@@ -1137,8 +1154,8 @@ function ProgressTab() {
       )}
 
       <Card>
-        <SectionTitle sub="Every session, newest first">Session log</SectionTitle>
-        {[...history].reverse().slice(0, 12).map((h) => (
+        <SectionTitle sub={`Sessions in ${resolved.label.toLowerCase()}, newest first`}>Session log</SectionTitle>
+        {[...history].reverse().slice(0, 24).map((h) => (
           <Row
             key={h.date}
             label={fmtDate(h.date)}
@@ -1158,30 +1175,37 @@ function ProgressTab() {
 function VolumeTab() {
   const { data } = useStore()
   const targets = useMemo(() => volumeTargets(data), [data])
+  const { range, resolved, setRange } = useDateRange('volume')
+  const earliest = useMemo(() => [...data.workouts].map((w) => w.date).sort()[0] ?? null, [data.workouts])
+  const inRange = useMemo(() => withinRange(data.workouts, resolved), [data.workouts, resolved])
 
-  // Weekly totals across the last 8 weeks, so trends in overall workload show.
-  const weekly = useMemo(() => {
-    const out: { week: string; sets: number }[] = []
-    for (let i = 7; i >= 0; i--) {
-      const start = weekStart(addDays(todayISO(), -i * 7))
-      const end = addDays(start, 6)
-      const sets = data.workouts
-        .filter((w) => w.date >= start && w.date <= end)
-        .reduce((a, w) => a + w.exercises.reduce((b, e) => b + workingSets(e.sets).length, 0), 0)
-      out.push({ week: start, sets })
+  // Bucketed to suit the window: a year of weekly bars is 52 slivers, so long ranges
+  // roll up to months.
+  const bucket = bucketFor(resolved, earliest ? Math.abs(daysBetween(earliest, todayISO())) + 1 : 90)
+  const buckets = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const w of inRange) {
+      const k = bucketStart(w.date, bucket)
+      const sets = w.exercises.reduce((b, e) => b + workingSets(e.sets).length, 0)
+      map.set(k, (map.get(k) ?? 0) + sets)
     }
-    return out
-  }, [data.workouts])
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([period, sets]) => ({ period, sets }))
+  }, [inRange, bucket])
 
   const rows = targets
     .filter((t) => t.target > 0)
     .sort((a, b) => b.deficit - a.deficit)
     .map(volumeBar)
 
-  const raw = muscleSetVolume(withinDays(data.workouts, 7), data.customExercises)
+  // Per-muscle totals over the chosen range, shown as a per-week average so the
+  // number stays comparable however wide the window is.
+  const raw = useMemo(() => muscleSetVolume(inRange, data.customExercises), [inRange, data.customExercises])
+  const weeks = Math.max(1, (resolved.days ?? (earliest ? Math.abs(daysBetween(earliest, todayISO())) + 1 : 7)) / 7)
 
   return (
     <div className="space-y-4">
+      <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+
       <Card>
         <SectionTitle sub="Weekly average over the last 14 days, against the target for your current goal">
           Sets per muscle group
@@ -1194,24 +1218,26 @@ function VolumeTab() {
       </Card>
 
       <ChartFrame
-        title="Total hard sets per week"
+        title={`Total hard sets per ${bucket}`}
         sub="All working sets across every muscle group. Warm-ups are excluded."
-        table={{ head: ['Week of', 'Sets'], rows: [...weekly].reverse().map((w) => [fmtDate(w.week), w.sets]) }}
+        table={{ head: [bucketLabel(bucket), 'Sets'], rows: [...buckets].reverse().map((w) => [fmtDate(w.period), w.sets]) }}
       >
         <TimeSeries
-          data={weekly}
-          xKey="week"
+          data={buckets}
+          xKey="period"
           xTickFormatter={fmtDate}
           series={[{ key: 'sets', label: 'Sets', color: SERIES.s1, bar: true }]}
         />
       </ChartFrame>
 
       <Card>
-        <SectionTitle sub="Last 7 days, fractional sets">Volume this week</SectionTitle>
+        <SectionTitle sub={`${resolved.label} · fractional sets, averaged per week`}>Volume per muscle</SectionTitle>
         {MUSCLES.filter((m) => raw[m] > 0).map((m) => (
-          <Row key={m} label={MUSCLE_LABEL[m]} value={round(raw[m], 1)} />
+          <Row key={m} label={MUSCLE_LABEL[m]} value={round(raw[m] / weeks, 1)} sub={`${round(raw[m], 1)} total`} />
         ))}
-        {MUSCLES.every((m) => raw[m] === 0) && <p className="text-xs text-ink-3">No sets logged in the last 7 days.</p>}
+        {MUSCLES.every((m) => raw[m] === 0) && (
+          <p className="text-xs text-ink-3">No sets logged in {resolved.label.toLowerCase()}.</p>
+        )}
       </Card>
     </div>
   )

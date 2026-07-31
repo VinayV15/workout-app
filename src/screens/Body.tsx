@@ -4,6 +4,9 @@ import type { BodyEntry } from '../lib/types'
 import { Button, Card, Empty, Field, Row, SectionTitle, Segmented, Sheet, Stat } from '../components/ui'
 import { ChartFrame, SERIES, TimeSeries, niceDomain } from '../components/charts'
 import Physique from './Physique'
+import RangePicker, { useDateRange } from '../components/RangePicker'
+import { withinRange } from '../lib/dateRange'
+import { rateOverRange, leanRateOverRange } from '../lib/trends'
 import {
   bmi,
   bmiCategory,
@@ -17,7 +20,6 @@ import {
   latestBodyFat,
   latestWeight,
   leanMass,
-  leanRateLbPerWeek,
   lengthUnit,
   navyBodyFat,
   nutritionTargets,
@@ -26,7 +28,6 @@ import {
   storeWeight,
   targetWeeklyRate,
   todayISO,
-  weightRateLbPerWeek,
   weightUnit,
 } from '../lib/calc'
 
@@ -197,17 +198,24 @@ function Trends() {
   const units = data.profile.units
   const wu = weightUnit(units)
   const profile = data.profile
+  const { range, resolved, setRange } = useDateRange('body')
+  // Everything below reads the filtered list, so one picker governs the stat tiles,
+  // the rate figure and every chart at once.
+  const inRange = useMemo(() => withinRange(data.body, resolved), [data.body, resolved])
+  const earliest = useMemo(() => [...data.body].map((b) => b.date).sort()[0] ?? null, [data.body])
 
-  const weight = latestWeight(data.body)
-  const bf = latestBodyFat(data.body, profile)
-  const rate = weightRateLbPerWeek(data.body)
-  const leanRate = leanRateLbPerWeek(data.body, profile)
+  const weight = latestWeight(inRange)
+  const bf = latestBodyFat(inRange, profile)
+  // Rate over the selected window rather than a fixed 4 weeks — this is a read-out,
+  // not the coach's calibrated diagnostic.
+  const rate = rateOverRange(inRange, resolved)
+  const leanRate = leanRateOverRange(inRange, profile, resolved)
   const targetRate = targetWeeklyRate(data)
   const nut = nutritionTargets(data)
   const bmiValue = weight && profile.heightIn ? bmi(weight.weightLb, profile.heightIn) : null
 
   const series = useMemo(() => {
-    const pts = data.body.filter((b) => b.weightLb).sort((a, b) => a.date.localeCompare(b.date))
+    const pts = inRange.filter((b) => b.weightLb).sort((a, b) => a.date.localeCompare(b.date))
     const trend = ema(pts, (p) => p.weightLb!, 0.25)
     return pts.map((p, i) => {
       const pct = p.bodyFatPct ?? navyBodyFat(p, profile)
@@ -221,10 +229,22 @@ function Trends() {
         waist: p.waistIn ? round(dispLength(p.waistIn, units), 1) : null,
       }
     })
-  }, [data.body, profile, units])
+  }, [inRange, profile, units])
 
   if (series.length === 0) {
-    return <Empty title="No body data yet" body="Log a weight entry and this tab fills in with your trend line, body-composition split and rate of change against the target for your goal." />
+    return (
+      <div className="space-y-4">
+        <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+        <Empty
+          title={data.body.length ? 'Nothing logged in this range' : 'No body data yet'}
+          body={
+            data.body.length
+              ? 'Widen the date range, or choose All time, to see the entries you do have.'
+              : 'Log a weight entry and this tab fills in with your trend line, body-composition split and rate of change against the target for your goal.'
+          }
+        />
+      </div>
+    )
   }
 
   const hasComposition = series.some((s) => s.lean != null)
@@ -239,6 +259,8 @@ function Trends() {
 
   return (
     <div className="space-y-4">
+      <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <Stat
           label="Weight"
@@ -272,7 +294,7 @@ function Trends() {
 
       {rate != null && targetRate && (
         <Card>
-          <SectionTitle sub="Trailing 4 weeks, fitted through all your weigh-ins">Rate of change</SectionTitle>
+          <SectionTitle sub={`Fitted through every weigh-in in ${resolved.label.toLowerCase()}`}>Rate of change</SectionTitle>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-semibold tracking-tight" style={{ color: rateGood ? 'var(--delta-good)' : 'var(--warning)' }}>
               {rate > 0 ? '+' : ''}
@@ -411,13 +433,23 @@ function History() {
   const wu = weightUnit(units)
   const lu = lengthUnit(units)
   const [open, setOpen] = useState<string | null>(null)
-  const sorted = [...data.body].sort((a, b) => b.date.localeCompare(a.date))
+  const { range, resolved, setRange } = useDateRange('body')
+  const earliest = useMemo(() => [...data.body].map((b) => b.date).sort()[0] ?? null, [data.body])
+  const sorted = useMemo(
+    () => withinRange(data.body, resolved).sort((a, b) => b.date.localeCompare(a.date)),
+    [data.body, resolved],
+  )
   const selected = sorted.find((b) => b.id === open)
-
-  if (sorted.length === 0) return <Empty title="No entries" body="Saved body metrics appear here." />
 
   return (
     <div className="space-y-2">
+      <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+      {sorted.length === 0 && (
+        <Empty
+          title={data.body.length ? 'Nothing in this range' : 'No entries'}
+          body={data.body.length ? 'Widen the range or choose All time.' : 'Saved body metrics appear here.'}
+        />
+      )}
       {sorted.map((b) => {
         const est = b.bodyFatPct ?? navyBodyFat(b, data.profile)
         return (

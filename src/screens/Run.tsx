@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { getRunDraft, setRunDraft, uid, useStore } from '../lib/store'
+import RangePicker, { useDateRange } from '../components/RangePicker'
+import { bucketFor, bucketLabel, bucketStart, withinRange } from '../lib/dateRange'
 import type { Run, RunType } from '../lib/types'
-import { RUN_TYPE_LABEL } from '../lib/types'
+import { HARD_RUN_TYPES, RUN_TYPE_LABEL } from '../lib/types'
 import { Button, Card, Empty, Field, Row, SectionTitle, Segmented, SelectField, Sheet, Stat } from '../components/ui'
 import { ChartFrame, SERIES, TimeSeries, niceDomain } from '../components/charts'
 import {
@@ -10,6 +12,7 @@ import {
   addDays,
   bestEfforts,
   bestVdot,
+  daysBetween,
   dispDistance,
   dispElevation,
   distanceUnit,
@@ -25,7 +28,6 @@ import {
   storeElevation,
   todayISO,
   trainingPaces,
-  weeklyMileage,
   withinDays,
 } from '../lib/calc'
 
@@ -252,15 +254,27 @@ function RunHistory() {
   const units = data.profile.units
   const du = distanceUnit(units)
   const [open, setOpen] = useState<string | null>(null)
-  const sorted = [...data.runs].sort((a, b) => b.date.localeCompare(a.date))
+  const { range, resolved, setRange } = useDateRange('run')
+  const earliest = useMemo(() => [...data.runs].map((r) => r.date).sort()[0] ?? null, [data.runs])
+  const sorted = useMemo(
+    () => withinRange(data.runs, resolved).sort((a, b) => b.date.localeCompare(a.date)),
+    [data.runs, resolved],
+  )
   const selected = sorted.find((r) => r.id === open)
-
-  if (sorted.length === 0) {
-    return <Empty title="No runs logged" body="Every run you save shows up here with its pace, and feeds the weekly mileage and load charts." />
-  }
 
   return (
     <div className="space-y-2">
+      <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+      {sorted.length === 0 && (
+        <Empty
+          title={data.runs.length ? 'No runs in this range' : 'No runs logged'}
+          body={
+            data.runs.length
+              ? 'Widen the range or choose All time to see the runs you have logged.'
+              : 'Every run you save shows up here with its pace, and feeds the weekly mileage and load charts.'
+          }
+        />
+      )}
       {sorted.map((r) => (
         <button
           key={r.id}
@@ -332,23 +346,42 @@ function RunAnalysis() {
   const units = data.profile.units
   const du = distanceUnit(units)
   const paceFactor = units === 'metric' ? 0.621371192 : 1
+  const { range, resolved, setRange } = useDateRange('run')
+  const earliest = useMemo(() => [...data.runs].map((r) => r.date).sort()[0] ?? null, [data.runs])
+  const runs = useMemo(() => withinRange(data.runs, resolved), [data.runs, resolved])
 
-  const weekly = useMemo(() => weeklyMileage(data.runs, 12), [data.runs])
-  const load = useMemo(() => acwr(data.runs), [data.runs])
-  const dist = useMemo(() => intensityDistribution(data.runs), [data.runs])
-  const efforts = useMemo(() => bestEfforts(data.runs), [data.runs])
-  const v = useMemo(() => bestVdot(data.runs), [data.runs])
+  // Distance bucketed to suit the window: daily bars over a fortnight, weekly over a
+  // quarter, monthly over years. A year of daily bars is 365 slivers nobody can read.
+  const bucket = bucketFor(resolved, earliest ? Math.abs(daysBetween(earliest, todayISO())) + 1 : 90)
+  const buckets = useMemo(() => {
+    const map = new Map<string, { miles: number; hard: number }>()
+    for (const r of runs) {
+      const k = bucketStart(r.date, bucket)
+      const b = map.get(k) ?? { miles: 0, hard: 0 }
+      b.miles += r.distanceMi
+      if (HARD_RUN_TYPES.includes(r.type)) b.hard += r.distanceMi
+      map.set(k, b)
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([k, b]) => ({ period: k, total: round(dispDistance(b.miles, units), 1), hard: round(dispDistance(b.hard, units), 1) }))
+  }, [runs, bucket, units])
+
+  // Best efforts, VDOT and paces come from the range too, so "what was my 5K pace
+  // last spring" is answerable rather than always showing your all-time best.
+  const efforts = useMemo(() => bestEfforts(runs), [runs])
+  const v = useMemo(() => bestVdot(runs), [runs])
   const paces = v ? trainingPaces(v.value) : null
+  const dist = useMemo(() => intensityDistribution(runs, resolved.days ?? 3650), [runs, resolved.days])
+  // The load ratio is a fixed 7-over-28-day definition and always reads from today,
+  // so it deliberately ignores the picker.
+  const load = useMemo(() => acwr(data.runs), [data.runs])
+  const totalMi = runs.reduce((a, r) => a + r.distanceMi, 0)
+  const perWeek = resolved.days ? totalMi / (resolved.days / 7) : null
 
   if (data.runs.length === 0) {
     return <Empty title="Nothing to analyse yet" body="Log a few runs — including one hard effort or time trial — and this tab will show your mileage trend, injury-risk load ratio, best times and personalised training paces." />
   }
-
-  const weeklyChart = weekly.map((w) => ({
-    week: w.week,
-    total: round(dispDistance(w.miles, units), 1),
-    hard: round(dispDistance(w.hard, units), 1),
-  }))
 
   // 28-day rolling acute vs chronic load, so the trend in the ratio is visible.
   const loadSeries = useMemo(() => {
@@ -366,17 +399,16 @@ function RunAnalysis() {
     return out
   }, [data.runs, units])
 
-  const thisWeek = weekly[weekly.length - 1]?.miles ?? 0
-  const last4 = weekly.slice(-4).reduce((a, w) => a + w.miles, 0) / 4
-
   return (
     <div className="space-y-4">
+      <RangePicker range={range} resolved={resolved} onChange={setRange} earliest={earliest} />
+
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <Stat
-          label="This week"
-          value={round(dispDistance(thisWeek, units), 1)}
+          label="Distance"
+          value={round(dispDistance(totalMi, units), 1)}
           unit={du}
-          sub={`4-week avg ${round(dispDistance(last4, units), 1)}`}
+          sub={perWeek != null ? `${round(dispDistance(perWeek, units), 1)} ${du}/week average` : `${runs.length} runs`}
         />
         <Stat
           label="Load ratio"
@@ -392,24 +424,24 @@ function RunAnalysis() {
           }
         />
         <Stat label="Easy running" value={`${dist.easyPct}%`} sub="target ~80%" />
-        <Stat label="VDOT" value={v ? round(v.value, 1) : '—'} sub={v ? `from ${fmtDate(v.run.date)}` : 'log a hard effort'} />
+        <Stat label="VDOT" value={v ? round(v.value, 1) : '—'} sub={v ? `best in range · ${fmtDate(v.run.date)}` : 'log a hard effort'} />
       </div>
 
       <ChartFrame
-        title={`Weekly distance (${du})`}
-        sub="Total distance per week with the hard-running portion shown separately."
+        title={`Distance per ${bucket} (${du})`}
+        sub={`Total distance with the hard-running portion shown separately, bucketed by ${bucket} to suit the range.`}
         legend={[
           { label: 'Total', color: SERIES.s1 },
           { label: 'Hard running', color: SERIES.s2 },
         ]}
         table={{
-          head: ['Week of', `Total (${du})`, `Hard (${du})`],
-          rows: [...weeklyChart].reverse().map((w) => [fmtDate(w.week), w.total, w.hard]),
+          head: [bucketLabel(bucket), `Total (${du})`, `Hard (${du})`],
+          rows: [...buckets].reverse().map((w) => [fmtDate(w.period), w.total, w.hard]),
         }}
       >
         <TimeSeries
-          data={weeklyChart}
-          xKey="week"
+          data={buckets}
+          xKey="period"
           xTickFormatter={fmtDate}
           series={[
             { key: 'total', label: 'Total', color: SERIES.s1, bar: true },
@@ -420,7 +452,7 @@ function RunAnalysis() {
 
       <ChartFrame
         title="Training load"
-        sub="Your last 7 days of distance against your 4-week average. When the solid line runs far above the dashed one, injury risk climbs."
+        sub="Your last 7 days of distance against your 4-week average — a fixed definition, so this one always reads from today whatever range is selected."
         legend={[
           { label: '7-day load', color: SERIES.s1 },
           { label: '4-week average', color: SERIES.muted, dashed: true },
@@ -444,7 +476,7 @@ function RunAnalysis() {
       </ChartFrame>
 
       <Card>
-        <SectionTitle sub="Best actual time at each distance, and what your current fitness predicts">
+        <SectionTitle sub={`Best time at each distance within ${resolved.label.toLowerCase()}, and what that fitness predicts`}>
           Distance benchmarks
         </SectionTitle>
         <div className="overflow-x-auto">
@@ -507,7 +539,7 @@ function RunAnalysis() {
       )}
 
       <Card>
-        <SectionTitle sub="Last 4 weeks">Intensity distribution</SectionTitle>
+        <SectionTitle sub={resolved.label}>Intensity distribution</SectionTitle>
         <div className="flex h-3 overflow-hidden rounded-full">
           <div style={{ width: `${dist.easyPct}%`, background: SERIES.s1 }} />
           <div style={{ width: '2px', background: 'var(--surface-1)' }} />

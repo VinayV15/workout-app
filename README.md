@@ -298,6 +298,41 @@ along a spine. Movements defined by spinal flexion — the cable crunch, the ab-
 rollout — get the written cues and say plainly why there is no picture, rather than
 showing a figure that is quietly wrong about the one thing you are trying to learn.
 
+### Date ranges
+
+Every chart, table and trend read-out has a range picker, defaulting to the **last 90
+days**. Two kinds of preset, because they answer different questions:
+
+- **Rolling** — last 7 days, 30 days, 90 days, 1 year. These always end today and
+  always contain a full period, which is what a trend line wants: it should run up to
+  now, and never be nearly empty because a calendar month started two days ago.
+- **Calendar** — this month, last month, this year. For reviewing a defined block.
+- **All time**, and a **custom** from/to.
+
+Ranges are remembered **per screen**, on the device. Per screen because body
+composition moves over months and lifts move week to week, so one global window would
+be wrong for one of them — you can hold a year of bodyweight next to a month of
+lifting. On the device rather than in the synced document because it is a viewing
+preference, not training data: opening the app on your phone should not change what
+your laptop is looking at.
+
+Charts **re-bucket to suit the window** — daily bars up to a month, weekly to a year,
+monthly beyond that. A year of daily bars is 365 slivers nobody can read.
+
+**What the picker deliberately does not touch is the coach.** Its windows are
+definitions, not display preferences: the acute-to-chronic workload ratio *is* last 7
+days over the 4-week average, weekly set targets are a 14-day average, and the
+0.5–1%/week fat-loss band is calibrated per week over about a month. Re-scoping those
+to a year would leave every label claiming something untrue, so the load chart and the
+Coach tab say plainly that they read from today whatever is selected.
+
+The coach does now use more history where more history makes it *more* accurate,
+rather than less. Its trend fits try the calibrated window first and only widen if
+that window cannot support a fit — so a well-logged month gives exactly the calibrated
+figure, while someone who weighs in fortnightly gets a real answer instead of silence,
+labelled with the window it actually used ("fitted over 11 weeks rather than the usual
+4 — there were not enough weigh-ins in the last month to trust a shorter fit").
+
 ### Rest between sets
 
 Configured under *Settings → In the gym*, three ways:
@@ -498,6 +533,8 @@ src/lib/calc.ts        all the sports-science math (1RM, VDOT, ACWR, Navy BF, TD
 src/lib/recommend.ts   the coaching engine and volume targets
 src/lib/program.ts     training blocks: rotation, double progression, deloads, presets
 src/lib/gym.ts         plate math, warm-up ramps, rest durations, PR detection
+src/lib/dateRange.ts   range presets, resolution, bucketing, per-screen persistence
+src/lib/trends.ts      trend fits over a chosen range (calc.ts holds the coach's fixed ones)
 src/lib/pose.ts        posing the figure: joint angles, rigid segments, anchoring
 src/lib/exercisePoses.ts   movement archetypes, 2-4 positions each
 src/lib/exerciseGuide.ts   per-exercise cues, steps and mistakes
@@ -516,6 +553,7 @@ supabase/migrations/    the table and security policy sync needs, as a migration
 scripts/test-sync.mjs  sync merge tests (npm test)
 scripts/test-coach.mjs     fatigue, load accounting, units and CSV escaping
 scripts/test-gym.mjs       plate math, warm-up ramps, rest durations, PR detection
+scripts/test-range.mjs     range boundaries, month lengths, leap years, bucketing
 scripts/test-pose.mjs      joint conventions, segment rigging, diagram physics
 scripts/solve-poses.mjs    derives pose angles from target joint positions (npm run solve:poses)
 scripts/test-program.mjs   block rotation, progression arithmetic and deloads

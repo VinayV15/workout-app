@@ -24,6 +24,7 @@ import { draftFromDay } from './program'
 import { DEFAULT_TEMPLATES } from './exercises'
 import { csvCell, todayISO } from './calc'
 import { setSkipRestore } from './firstRun'
+import { rangeKeys } from './dateRange'
 import {
   completeSignInFromUrl,
   currentUser,
@@ -507,6 +508,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         try {
           localStorage.removeItem(DRAFT_KEY)
           localStorage.removeItem(RUN_DRAFT_KEY)
+          for (const k of rangeKeys()) localStorage.removeItem(k)
         } catch {
           /* storage denied — nothing to clear */
         }

@@ -28,7 +28,6 @@ import {
   lastTrained,
   latestBodyFat,
   latestWeight,
-  leanRateLbPerWeek,
   longestRun,
   muscleFrequency,
   muscleSetVolume,
@@ -37,14 +36,16 @@ import {
   projectGoal,
   riegel,
   round,
-  strengthTrend,
+  describeWindow,
+  leanTrend,
+  strengthTrendFit,
   targetWeeklyRate,
   todayISO,
   trainingPaces,
   vdot,
   volumeLoad,
   weekStart,
-  weightRateLbPerWeek,
+  weightTrend,
   weeklyMileage,
   weightUnit,
   withinDays,
@@ -217,7 +218,8 @@ export function generateRecommendations(data: AppData): Recommendation[] {
 
   const weight = latestWeight(data.body)
   const bf = latestBodyFat(data.body, data.profile)
-  const rate = weightRateLbPerWeek(data.body)
+  const rateFit = weightTrend(data.body)
+  const rate = rateFit?.perWeek ?? null
   const targetRate = targetWeeklyRate(data)
   const nut = nutritionTargets(data)
 
@@ -304,6 +306,13 @@ export function generateRecommendations(data: AppData): Recommendation[] {
     const tooFast = rate < targetRate.min - 0.15
     const tooSlow = rate > targetRate.max + 0.15
     const fmtRate = `${rate > 0 ? '+' : ''}${round(rate, 2)} lb/week (${round(pctPerWeek, 2)}% of bodyweight)`
+    // Naming the window matters when it is not the standard one: a rate quoted as a
+    // 4-week trend that was actually fitted over 11 weeks is a lie, and refusing to
+    // report anything because 4 weeks held two weigh-ins throws away a good answer.
+    const over = rateFit ? `Trailing ${describeWindow(rateFit)}` : 'Recent trend'
+    const sparse = rateFit?.widened
+      ? ` Fitted over ${describeWindow(rateFit)} rather than the usual 4 — there were not enough weigh-ins in the last month to trust a shorter fit.`
+      : ''
 
     if (cuttingGoal && tooFast) {
       push({
@@ -323,7 +332,7 @@ export function generateRecommendations(data: AppData): Recommendation[] {
         tag: 'nutrition',
         severity: 'warning',
         title: flat ? 'Fat loss has stalled' : 'Fat loss is slower than target',
-        detail: `Trailing 4-week trend is ${fmtRate}.`,
+        detail: `${over} trend is ${fmtRate}.${sparse}`,
         why: 'A stall almost always means intake has crept up to meet the new, lower maintenance of a lighter body — not that metabolism is broken. Energy expenditure also falls as you lose weight, so the deficit has to be re-set periodically.',
         action: `Drop about ${Math.round((nut?.target ?? 2200) * 0.1)} kcal a day, or add 2,000–3,000 daily steps. Change one lever, then hold it for two weeks before judging.`,
         priority: 340,
@@ -345,7 +354,7 @@ export function generateRecommendations(data: AppData): Recommendation[] {
         tag: 'nutrition',
         severity: 'good',
         title: 'Rate of change is right where it should be',
-        detail: `Trailing 4-week trend is ${fmtRate}, inside the target band.`,
+        detail: `${over} trend is ${fmtRate}, inside the target band.${sparse}`,
         why: 'This is the pace that maximises fat loss while protecting lean mass. The only correct move is to keep doing exactly this.',
         action: 'Change nothing. Re-evaluate in two weeks.',
         priority: 120,
@@ -353,14 +362,15 @@ export function generateRecommendations(data: AppData): Recommendation[] {
     }
   }
 
-  const leanRate = leanRateLbPerWeek(data.body, data.profile)
+  const leanFit = leanTrend(data.body, data.profile)
+  const leanRate = leanFit?.perWeek ?? null
   if (leanRate != null && leanRate < -0.2 && cuttingGoal) {
     push({
       id: 'losing_lean_mass',
       tag: 'nutrition',
       severity: 'serious',
       title: 'You are losing lean mass, not just fat',
-      detail: `Estimated lean mass is trending ${round(leanRate, 2)} lb/week.`,
+      detail: `Estimated lean mass is trending ${round(leanRate, 2)} lb/week, fitted over ${describeWindow(leanFit!)}.`,
       why: 'Losing lean tissue in a deficit means one of three things is short: protein, resistance-training stimulus, or the deficit is too aggressive. Muscle is what keeps your metabolic rate up and defines how you look at the finish — it is much harder to rebuild than fat is to re-lose.',
       action: `Hit ${nut?.proteinG ?? 180}g protein daily, keep at least two heavy sets (5–8 reps) per major lift each week, and ease the deficit by ~200 kcal.`,
       priority: 410,
@@ -572,27 +582,29 @@ export function generateRecommendations(data: AppData): Recommendation[] {
 
   // ---- Per-lift progression --------------------------------------------
   const trackedIds = new Set(data.workouts.flatMap((w) => w.exercises.map((e) => e.exerciseId)))
-  const stalled: { name: string; trend: number }[] = []
+  const stalled: { name: string; trend: number; days: number }[] = []
   const improving: { name: string; trend: number }[] = []
   for (const id of trackedIds) {
     const hist = exerciseHistory(id, data)
     const recentSessions = hist.filter((h) => h.date >= addDays(todayISO(), -42))
     if (recentSessions.length < 3) continue
-    const trend = strengthTrend(hist)
-    if (trend == null) continue
+    const fit = strengthTrendFit(hist)
+    if (fit == null) continue
+    const trend = fit.perWeek
     const name = EXERCISES.find((e) => e.id === id)?.name ?? data.customExercises.find((e) => e.id === id)?.name ?? id
-    if (trend <= 0.05) stalled.push({ name, trend })
+    if (trend <= 0.05) stalled.push({ name, trend, days: fit.days })
     else if (trend >= 0.6) improving.push({ name, trend })
   }
 
   if (stalled.length) {
     const worst = stalled.sort((a, b) => a.trend - b.trend).slice(0, 3)
+    const window = Math.max(...stalled.map((s) => s.days))
     push({
       id: 'stalled_lifts',
       tag: 'strength',
       severity: cuttingGoal ? 'info' : 'warning',
       title: cuttingGoal ? 'Strength is flat — acceptable in a deficit, but watch it' : 'Break through a stall',
-      detail: `No estimated-1RM progress in 6 weeks on ${worst.map((s) => s.name).join(', ')}.`,
+      detail: `No estimated-1RM progress in ${Math.round(window / 7)} weeks on ${worst.map((s) => s.name).join(', ')}.`,
       why: cuttingGoal
         ? 'Maintaining strength while losing fat is a win, not a failure — you are getting stronger per pound. What is not acceptable is strength actually falling, which means muscle is going with the fat.'
         : 'A stall on a lift for six weeks usually means the same load, the same rep target and the same order every session. Progress needs one variable to move: load, reps, or how close to failure the last set gets.',
