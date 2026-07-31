@@ -7,6 +7,8 @@ import Body from './screens/Body'
 import Coach from './screens/Coach'
 import Settings from './screens/Settings'
 import Onboarding from './screens/Onboarding'
+import Welcome from './screens/Welcome'
+import { getSkipRestore, launchView } from './lib/firstRun'
 
 type Tab = 'today' | 'lift' | 'run' | 'body' | 'coach' | 'settings'
 
@@ -27,10 +29,25 @@ function initialTab(): Tab {
   return TABS.some((t) => t.id === go) ? (go as Tab) : 'today'
 }
 
+/** Held while the launch pull is in flight, so setup never flashes over it. */
+function Restoring() {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="text-lg font-semibold tracking-tight">Forge</div>
+      <p className="text-sm text-ink-2">Loading your training log…</p>
+    </div>
+  )
+}
+
 function Shell() {
-  const { data } = useStore()
+  const { data, sync } = useStore()
   const [tab, setTab] = useState<Tab>(initialTab)
-  const needsOnboarding = !data.profile.heightIn && data.body.length === 0 && data.workouts.length === 0
+  const [startFresh, setStartFresh] = useState(getSkipRestore)
+  const hasLocalData = !!data.profile.heightIn || data.body.length > 0 || data.workouts.length > 0
+  // `email` is only set once a session has been confirmed, which makes it a
+  // truer test than the phase — an expired link leaves an error phase with no
+  // session, and that user still needs the sign-in gate rather than setup.
+  const signedIn = !!sync.email
 
   // Keyboard shortcuts on desktop: 1–5 jump between tabs.
   useEffect(() => {
@@ -45,7 +62,17 @@ function Shell() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  if (needsOnboarding) return <Onboarding />
+  const view = launchView({
+    hasLocalData,
+    syncConfigured: sync.phase !== 'off',
+    bootstrapped: sync.bootstrapped,
+    syncing: sync.phase === 'syncing',
+    signedIn,
+    startFresh,
+  })
+  if (view === 'restoring') return <Restoring />
+  if (view === 'welcome') return <Welcome onStartFresh={() => setStartFresh(true)} />
+  if (view === 'onboarding') return <Onboarding />
 
   return (
     <div className="min-h-dvh sm:flex">

@@ -10,12 +10,11 @@ import {
 } from '../lib/install'
 import {
   getSyncConfig,
-  sendSignInEmail,
   setSyncConfig,
   signOutSync,
-  verifySignInCode,
 } from '../lib/sync'
 import { Button, Card, Chip, Field, SectionTitle, Segmented, SelectField } from '../components/ui'
+import SignInForm from '../components/SignInForm'
 import { GOAL_LABEL, MUSCLES, MUSCLE_LABEL, type GoalPrimary, type Sex, type Units } from '../lib/types'
 import {
   RACE_DISTANCES,
@@ -421,13 +420,11 @@ function InstallSection() {
 function SyncSection() {
   const { data, sync, pendingChanges, syncNow, refreshSyncStatus, toggleAutoSync } = useStore()
   const existing = getSyncConfig()
+  const signedIn = !!sync.email
 
   const [editingConfig, setEditingConfig] = useState(!existing)
   const [url, setUrl] = useState(existing?.url ?? '')
   const [anonKey, setAnonKey] = useState(existing?.anonKey ?? '')
-  const [email, setEmail] = useState('')
-  const [code, setCode] = useState('')
-  const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null)
 
@@ -570,63 +567,19 @@ function SyncSection() {
         )}
 
         {/* --- Step 2: sign in --------------------------------------------- */}
-        {!editingConfig && sync.phase === 'signed-out' && (
+        {!editingConfig && !signedIn && (
           <div className="space-y-3 border-t border-line pt-3">
-            <Field
-              label="Your email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              hint="Passwordless — Supabase emails you a sign-in link. Do this once per device."
+            <SignInForm
+              onSignedIn={async () => {
+                await refreshSyncStatus()
+                await syncNow()
+              }}
             />
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                disabled={busy || !email.includes('@')}
-                onClick={() =>
-                  void guard(async () => {
-                    await sendSignInEmail(email)
-                    setSent(true)
-                  }, 'Check your email and open the link on this device.')
-                }
-              >
-                {sent ? 'Resend link' : 'Send sign-in link'}
-              </Button>
-            </div>
-            {sent && (
-              <div className="space-y-2">
-                <Field
-                  label="Or paste the 6-digit code"
-                  inputMode="numeric"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="123456"
-                  hint="Useful on an installed app, where opening the link switches to the browser. Requires the {{ .Token }} tag in your Supabase magic-link email template."
-                />
-                <Button
-                  disabled={busy || code.trim().length < 6}
-                  onClick={() =>
-                    void guard(async () => {
-                      await verifySignInCode(email, code)
-                      await refreshSyncStatus()
-                      setCode('')
-                      setSent(false)
-                      await syncNow()
-                    }, 'Signed in and synced.')
-                  }
-                >
-                  Verify code
-                </Button>
-              </div>
-            )}
           </div>
         )}
 
         {/* --- Step 3: ongoing -------------------------------------------- */}
-        {!editingConfig &&
-          (sync.phase === 'idle' || sync.phase === 'syncing' || sync.phase === 'error' || sync.phase === 'offline') && (
+        {!editingConfig && signedIn && (
           <div className="space-y-3 border-t border-line pt-3">
             <label className="flex items-start gap-2.5 text-xs">
               <input

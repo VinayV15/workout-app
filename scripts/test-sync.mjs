@@ -7,7 +7,8 @@
  * sync being switched on, and two devices logging different sessions the same
  * day.
  */
-import { mergeRows, rowsToPush } from '../src/lib/sync.ts'
+import { describeSyncError, mergeRows, rowsToPush } from '../src/lib/sync.ts'
+import { launchView } from '../src/lib/firstRun.ts'
 
 let passed = 0
 let failed = 0
@@ -172,6 +173,69 @@ console.log('sync merge')
     ['settings:main', T1],
   ])
   check('a second sync with no changes pushes nothing', rowsToPush(local, remote).length === 0)
+}
+
+// ---------------------------------------------------------------------------
+// Launch gate: which screen an app start lands on. The bug this replaces was a
+// returning user on an empty device being treated as brand new.
+// ---------------------------------------------------------------------------
+console.log('\nlaunch gate')
+{
+  const at = (over) =>
+    launchView({
+      hasLocalData: false,
+      syncConfigured: true,
+      bootstrapped: true,
+      syncing: false,
+      signedIn: false,
+      startFresh: false,
+      ...over,
+    })
+
+  check('an empty signed-out device offers sign-in rather than setup', at() === 'welcome')
+  check('a returning user is not shown setup while the pull is in flight', at({ syncing: true }) === 'restoring')
+  check('setup is held until the launch sequence settles', at({ bootstrapped: false }) === 'restoring')
+  check(
+    'a signed-in account with genuinely no data goes to setup',
+    at({ signedIn: true }) === 'onboarding',
+  )
+  check('choosing a local-only log goes straight to setup', at({ startFresh: true }) === 'onboarding')
+  check('with no project configured there is nothing to restore', at({ syncConfigured: false }) === 'onboarding')
+  check('existing local data opens the app', at({ hasLocalData: true }) === 'app')
+  check(
+    'existing local data opens the app even mid-sync',
+    at({ hasLocalData: true, syncing: true, bootstrapped: false }) === 'app',
+  )
+  check(
+    'an offline launch with saved data still opens the app',
+    at({ hasLocalData: true, signedIn: true }) === 'app',
+  )
+  check(
+    'a signed-out device that already has data is never interrupted',
+    at({ hasLocalData: true, startFresh: false }) === 'app',
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Error messages: these are the only explanation the user gets, so the common
+// failures must not surface as raw API strings.
+// ---------------------------------------------------------------------------
+console.log('\nerror messages')
+{
+  const rewritten = (raw) => {
+    const out = describeSyncError(raw)
+    return out !== raw && out.length > 0
+  }
+  check('a wrong password explains itself', rewritten('Invalid login credentials'))
+  check('a duplicate signup points at signing in', rewritten('User already registered'))
+  check(
+    'an unconfirmed email says where to turn confirmation off',
+    describeSyncError('Email not confirmed').includes('Confirm email'),
+  )
+  check('disabled signups are explained', rewritten('Signups not allowed for this instance'))
+  check('a consumed magic link is explained', rewritten('Email link is invalid or has expired'))
+  check('a missing table points at the migration', describeSyncError('relation "records" does not exist').includes('migration'))
+  check('an unrecognised error is passed through unchanged', describeSyncError('kaboom') === 'kaboom')
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

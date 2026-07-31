@@ -124,6 +124,13 @@ export interface SyncState {
   /** Summary of the most recent successful sync, for the UI. */
   lastResult?: { applied: number; pushed: number }
   autoSync: boolean
+  /**
+   * False until the launch sequence has settled — the session has been checked
+   * and, if signed in, the first pull has finished. A device with no local data
+   * must not be told it is a new user before this is true, or a returning user
+   * gets dropped into first-run setup while their history is still in flight.
+   */
+  bootstrapped: boolean
 }
 
 interface Store {
@@ -158,6 +165,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [sync, setSync] = useState<SyncState>({
     phase: isSyncConfigured() ? 'signed-out' : 'off',
     autoSync: getAutoSync(),
+    // With no project configured there is nothing to wait for.
+    bootstrapped: !isSyncConfigured(),
   })
 
   // Persist on every change. The document is small enough (a year of training
@@ -292,7 +301,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         error: linkError,
         lastSyncedAt: dataRef.current.sync.lastSyncedAt,
       }))
-      if (user && getAutoSync()) void syncNow()
+      // Awaited, not fired and forgotten: the first pull is what turns an empty
+      // device back into this user's training log, and the UI holds a brief
+      // "restoring" state until it lands.
+      if (user && getAutoSync()) await syncNow()
+      if (!cancelled) setSync((s) => ({ ...s, bootstrapped: true }))
     })()
     return () => {
       cancelled = true

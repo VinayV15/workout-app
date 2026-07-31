@@ -174,6 +174,40 @@ export async function verifySignInCode(email: string, code: string): Promise<voi
   if (error) throw new Error(describe(error.message))
 }
 
+/**
+ * Password sign-in.
+ *
+ * Preferred over the magic link on a phone: no mail round trip, no single-use
+ * token that a mail app's link preview can consume, and it behaves identically in
+ * the installed app and the browser. The link flow stays available as a recovery
+ * path for a forgotten password.
+ */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  const client = await getClient()
+  const { error } = await client.auth.signInWithPassword({ email: email.trim(), password })
+  if (error) throw new Error(describe(error.message))
+}
+
+/**
+ * Creates an account.
+ *
+ * With "Confirm email" switched off in the Supabase project this returns a usable
+ * session straight away and no email is ever sent. With it on, the account is
+ * created but unusable until the address is confirmed — the two outcomes need
+ * different things from the user, so they are reported separately rather than
+ * both looking like success.
+ */
+export async function signUpWithPassword(
+  email: string,
+  password: string,
+): Promise<'signed-in' | 'confirm-email'> {
+  if (password.length < 8) throw new Error('Use at least 8 characters for the password.')
+  const client = await getClient()
+  const { data, error } = await client.auth.signUp({ email: email.trim(), password })
+  if (error) throw new Error(describe(error.message))
+  return data.session ? 'signed-in' : 'confirm-email'
+}
+
 export async function signOutSync(): Promise<void> {
   const client = await getClient()
   await client.auth.signOut()
@@ -462,6 +496,9 @@ export async function runSync(local: AppData): Promise<SyncResult> {
 }
 
 /** Turns the most common Supabase errors into something actionable. */
+/** Exported under a clearer name for tests. */
+export { describe as describeSyncError }
+
 function describe(message: string): string {
   if (/relation .*records.* does not exist/i.test(message) || /Could not find the table/i.test(message)) {
     return 'The records table is missing — apply the migration in supabase/migrations/ to your project.'
@@ -486,6 +523,21 @@ function describe(message: string): string {
   }
   if (/abort|timed? ?out|timeout/i.test(message)) {
     return 'The project did not respond in time. It may be paused on the free tier — restore it from the Supabase dashboard, or try again on a better connection.'
+  }
+  if (/Invalid login credentials/i.test(message)) {
+    return 'That email and password do not match an account. If you have not made one yet, use "Create account".'
+  }
+  if (/User already registered|already been registered/i.test(message)) {
+    return 'An account already exists for that email — sign in instead, or use a sign-in link if you have forgotten the password.'
+  }
+  if (/Email not confirmed/i.test(message)) {
+    return 'This account still needs its email confirmed. Either open the confirmation email, or turn off Authentication → Sign In / Providers → "Confirm email" in Supabase.'
+  }
+  if (/Signups not allowed|signup is disabled|Email signups are disabled/i.test(message)) {
+    return 'New accounts are switched off for this project. Re-enable signups in Supabase → Authentication → Sign In / Providers.'
+  }
+  if (/Password should be at least/i.test(message)) {
+    return 'That password is too short for this project\u2019s minimum length.'
   }
   if (/rate limit|too many requests/i.test(message)) {
     return 'Supabase is rate-limiting sign-in emails (a few per hour on the free tier). Wait a little and try again.'

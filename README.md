@@ -68,6 +68,8 @@ Two details worth knowing, neither of which affects the install itself:
   resets that clock, so in practice regular use is enough. The real answer is that **with sync switched on this
   is recoverable**: sign in and the app pulls your whole history back down. It is also why baking the project
   credentials into the build (`.env.example`) is worth doing — then a restore is a sign-in, not a re-setup.
+  This matters more than it sounds on iOS: a home-screen app gets its own storage, separate from the Safari
+  tab you added it from, so it starts out empty and signs in fresh.
 - **Background sync.** iOS will not run sync while the app is closed. It syncs when you open it, come back to
   it, or reconnect — which is exactly when it matters.
 
@@ -114,17 +116,28 @@ integration to a project you already set up by hand is a no-op rather than an er
 1. Create a free project at [supabase.com](https://supabase.com).
 2. In the project's **SQL Editor**, paste and run [`supabase/migrations/20260731000000_init_records.sql`](supabase/migrations/20260731000000_init_records.sql). That creates
    one `records` table and the row-level-security policy that makes your rows readable only by you.
-3. In the app: *Settings → Cross-device sync*, paste the **Project URL** and the **anon public** key from
+3. In *Authentication → Sign In / Providers*, leave **Email** enabled and turn **off** "Confirm email".
+   Sign-in is then an email and a password with no round trip through your inbox — no link to wait for, no
+   single-use token for a mail app to consume by previewing it, and identical behaviour in the installed app
+   and the browser. (The tradeoff: nothing proves the address is real, so a typo means no password reset. For
+   a log you and a few friends use, that is a fair trade; leave confirmation on if you would rather it be
+   proven.)
+4. In the app: *Settings → Cross-device sync*, paste the **Project URL** and the **anon public** key from
    Supabase → Settings → API, and save.
-4. Enter your email and click *Send sign-in link*. Open the link on that device. Repeat step 4 on each other
-   device (the project details can be re-pasted, or baked into the build — see `.env.example`).
+5. Choose **Create account**, enter your email and a password, and you are signed in.
+
+On any other device, the app opens on a sign-in screen: sign in and your history is pulled down before the
+app opens. Bake the project credentials into the build (see `.env.example`) and that is the whole setup on a
+new device — otherwise you paste the URL and key first, in Settings.
 
 After that it is automatic: a few seconds after you log something, and whenever the app is reopened or comes
 back online. There is a *Sync now* button and a last-synced line if you want to check.
 
-**Installed on a phone?** Opening a magic link can bounce you to the browser instead of the app. Add
-`{{ .Token }}` to the Supabase *Magic Link* email template (Authentication → Emails) and you can type the
-6-digit code straight into the app instead.
+**Forgotten password, or would rather not have one?** *Use an email link instead* on the sign-in screen sends
+a magic link. Two caveats worth knowing: a link is single-use, and some mail apps consume it just by
+generating a preview; and in an installed app, opening a link can bounce you out to the browser. Both are
+solved by the 6-digit code shown alongside — add `{{ .Token }}` to the Supabase *Magic Link* email template
+(Authentication → Emails) to have the code in the email.
 
 **How conflicts are handled.** Every workout, run, body entry, template and your settings is synced as its
 own record with its own timestamp — not as one big document. So logging on your phone at the gym and editing
@@ -152,6 +165,8 @@ enter their email, and they are running. Do these two things in the Supabase das
 - *Authentication → Sign In / Providers* → turn **off** "Allow new users to sign up", then add each friend
   under *Authentication → Users → Invite*. Without this, anyone who finds the URL can create an account in
   your project (their data would still be private from everyone else — this is about not hosting strangers).
+  Note that turning signups off also disables *Create account* in the app, so invite each friend rather than
+  telling them to sign themselves up.
 - Bake the project credentials into the build (`.env.example`) so they never have to paste a URL or key.
 
 Free-tier headroom is not the constraint: 500 MB of database against a few hundred KB per person per year,
