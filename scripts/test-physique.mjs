@@ -26,7 +26,7 @@ import {
 } from '../src/lib/bodyMesh.ts'
 import { buildMuscleGrids, muscleGroupOf, MUSCLE_GROUPS } from '../src/lib/muscles.ts'
 import { buildFrameGrids, boneColorOf, BONE_GROUPS } from '../src/lib/skeletonMesh.ts'
-import { gridsToSegments, gridsToTriangles } from '../src/lib/anatomy.ts'
+import { armHangX, gridsToSegments, gridsToTriangles, legPoints } from '../src/lib/anatomy.ts'
 import { applyRelief, sampleMuscleField } from '../src/lib/relief.ts'
 import { buildFatGrids, fatColorOf } from '../src/lib/fatDeposits.ts'
 import { LEVELS } from '../src/lib/physique.ts'
@@ -790,6 +790,99 @@ console.log('\nocclusion')
   // Muscles and bones must be solid too, or a front view shows the far side.
   check('the muscle layer can be occluded', gridsToTriangles(buildMuscleGrids(p.lean, p.frame)).length % 9 === 0)
   check('the frame layer can be occluded', gridsToTriangles(buildFrameGrids(p.frame)).length % 9 === 0)
+}
+
+// ---------------------------------------------------------------------------
+// Legs vs pelvis vs arms.
+//
+// The thigh used to be planted at `max(thighR * 1.12, hip.a * 0.42)`, where the
+// thigh term won — so the bigger the legs, the further out they went, with nothing
+// tying them to the pelvis. Across body types that put the thigh's outer surface
+// 1.3-2.9in OUTSIDE the hips and 2-3in into the forearm, and it got worse the
+// heavier the body, which is backwards. Placement is now solved from the hip inward,
+// so these hold for every shape rather than the one the numbers were tuned on.
+// ---------------------------------------------------------------------------
+console.log('\nlegs hang from the pelvis')
+{
+  const BODIES = [
+    ['lean', { heightIn: 70, weightLb: 175, bodyFatPct: 12, sex: 'male' }],
+    ['average', { heightIn: 70, weightLb: 195, bodyFatPct: 20, sex: 'male' }],
+    ['heavy', { heightIn: 70, weightLb: 260, bodyFatPct: 34, sex: 'male' }],
+    ['obese', { heightIn: 70, weightLb: 320, bodyFatPct: 45, sex: 'male' }],
+    ['huge legs', { heightIn: 70, weightLb: 230, bodyFatPct: 10, sex: 'male', measured: { thigh: 31, hips: 40 } }],
+    ['narrow hips', { heightIn: 72, weightLb: 200, bodyFatPct: 12, sex: 'male', measured: { hips: 33, thigh: 26 } }],
+    ['female', { heightIn: 65, weightLb: 145, bodyFatPct: 26, sex: 'female' }],
+    ['female pear', { heightIn: 65, weightLb: 190, bodyFatPct: 38, sex: 'female', measured: { hips: 48, shoulders: 15 } }],
+    ['short', { heightIn: 60, weightLb: 130, bodyFatPct: 22, sex: 'female' }],
+    ['tall', { heightIn: 80, weightLb: 240, bodyFatPct: 15, sex: 'male' }],
+  ]
+  const layers = []
+  for (const [label, input] of BODIES) {
+    const ph = computePhysique(input)
+    for (const [layer, d] of [['lean', ph.lean], ['full', ph.full]]) {
+      const lg = legPoints(d, 1)
+      layers.push({
+        who: `${label}/${layer}`,
+        d,
+        thighOuter: lg.hip[0] + d.thighR,
+        calfOuter: lg.calf[0] + d.calfR,
+        hipX: lg.hip[0],
+        armInner: armHangX(d) - d.forearmR,
+      })
+    }
+  }
+
+  const over = layers.filter((x) => x.thighOuter > x.d.hip.a + 0.02)
+  check(
+    'no thigh is wider than the hips it hangs from',
+    over.length === 0,
+    over.map((x) => `${x.who} by ${(x.thighOuter - x.d.hip.a).toFixed(2)}in`).join(' '),
+  )
+
+  const calfOver = layers.filter((x) => x.calfOuter > x.d.hip.a + 0.02)
+  check('nor is any calf', calfOver.length === 0, calfOver.map((x) => x.who).join(' '))
+
+  // Contact is correct — arms at rest touch the outer thigh. Sinking half a forearm
+  // into the leg is not.
+  const sunk = layers.filter((x) => x.armInner < x.thighOuter - 0.5)
+  check(
+    'no forearm sinks into the thigh',
+    sunk.length === 0,
+    sunk.map((x) => `${x.who} by ${(x.thighOuter - x.armInner).toFixed(2)}in`).join(' '),
+  )
+
+  // The old failure mode scaled the wrong way: heavier bodies were worse. Whatever
+  // the remaining overlap is, it must not grow as the body does.
+  const worstBy = (name) => {
+    const l = layers.find((x) => x.who === name)
+    return l.thighOuter - l.armInner
+  }
+  check(
+    'the fit does not get worse as the body gets heavier',
+    worstBy('obese/full') <= worstBy('lean/full') + 0.3,
+    `obese ${worstBy('obese/full').toFixed(2)} vs lean ${worstBy('lean/full').toFixed(2)}`,
+  )
+
+  const crossed = layers.filter((x) => x.hipX <= 0)
+  check('no thigh centre crosses the midline', crossed.length === 0, crossed.map((x) => x.who).join(' '))
+
+  // Legs should stand roughly under the hips, not splay out or knock together.
+  const splayed = layers.filter((x) => {
+    const lg = legPoints(x.d, 1)
+    return Math.abs(lg.ankle[0] - lg.hip[0]) > x.d.heightIn * 0.05
+  })
+  check('the ankle sits roughly under the hip', splayed.length === 0, splayed.map((x) => x.who).join(' '))
+
+  // And the reason the old code failed: placement must follow the pelvis, not the
+  // thigh. Doubling thigh girth on fixed hips must not push the leg outward.
+  const thin = computePhysique({ heightIn: 70, weightLb: 190, bodyFatPct: 15, sex: 'male', measured: { hips: 38, thigh: 20 } })
+  const thick = computePhysique({ heightIn: 70, weightLb: 190, bodyFatPct: 15, sex: 'male', measured: { hips: 38, thigh: 30 } })
+  const outerOf = (ph) => legPoints(ph.full, 1).hip[0] + ph.full.thighR
+  check(
+    'a much thicker thigh on the same hips does not reach further out',
+    outerOf(thick) <= outerOf(thin) + 0.1,
+    `thin ${outerOf(thin).toFixed(2)} vs thick ${outerOf(thick).toFixed(2)}`,
+  )
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

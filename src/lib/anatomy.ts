@@ -108,10 +108,28 @@ export const ARM_TORSO_GAP = 0.55
 export function armHangX(d: BodyDims): number {
   const deltR = d.upperArmR * DELT_FACTOR
   const deltX = d.shoulderHalfWidth - deltR * 0.94
-  const clear = Math.max(d.hip.a * 0.92 + d.wristR, d.waist.a + d.forearmR + ARM_TORSO_GAP)
-  // The deltoid must stay the widest part of the body, as it is on a real
-  // standing figure, so the hand never swings outside the shoulder line.
-  const cap = d.shoulderHalfWidth - d.forearmR * 0.35
+  // The hand hangs *against* the thigh, not through it. Without this term the
+  // forearm passed 2in into the leg, which made a standing figure read as one fused
+  // mass from the hip down.
+  //
+  // Contact rather than clearance is the target, and deliberately so: on wide hips
+  // you cannot have both a gap to the thigh and a hand inside the shoulder line, and
+  // arms at rest really do touch the outer thigh. So this asks for the forearm's
+  // inner edge to reach the thigh — grazing it — and no further out than that.
+  const pastThigh = d.hip.a * THIGH_WITHIN_HIP + d.forearmR * 0.9
+  const clear = Math.max(d.hip.a * 0.92 + d.wristR, d.waist.a + d.forearmR + ARM_TORSO_GAP, pastThigh)
+  // The deltoid normally stays the widest part of the body, as it is on a real
+  // standing figure, so the hand does not swing outside the shoulder line. But that
+  // rule exists to protect the V-taper, and on a pear-shaped body there is no V to
+  // protect: with hips wider than shoulders the arms really do hang outside the
+  // shoulder line, because they have to clear the hips.
+  //
+  // So the cap yields — as far as a forearm's width past the shoulder, and no
+  // further, which keeps the arms reading as attached. At the extreme (48in hips on
+  // 30in shoulders) that still leaves the forearm touching the thigh, which is what
+  // actually happens on that body rather than a modelling failure.
+  const reachLimit = d.shoulderHalfWidth + d.forearmR
+  const cap = Math.max(d.shoulderHalfWidth - d.forearmR * 0.35, Math.min(pastThigh, reachLimit))
   return Math.min(Math.max(cap, deltX), Math.max(deltX * 0.98, clear))
 }
 
@@ -134,10 +152,36 @@ export function armPoints(d: BodyDims, side: 1 | -1) {
   }
 }
 
+/**
+ * How far out the thigh's outer surface may sit, as a fraction of the hip's
+ * half-width. Just inside 1, because the greater trochanter *is* the widest point
+ * of the hips and the thigh tapers in below it — a leg cannot be wider than the
+ * pelvis it hangs from.
+ */
+export const THIGH_WITHIN_HIP = 0.97
+
 /** Leg path points, matching the shell's leg chain. */
 export function legPoints(d: BodyDims, side: 1 | -1) {
   const H = d.heightIn
-  const hipX = side * Math.max(d.thighR * 1.12, d.hip.a * 0.42)
+  /**
+   * Thigh placement is derived from the hip, not from the thigh.
+   *
+   * This was `max(thighR * 1.12, hip.a * 0.42)`, where the thigh term won — so the
+   * bigger the legs, the further out they were planted, with nothing tying them to
+   * the pelvis. That put the thigh's outer surface 1.3–2.9in *outside* the hips and
+   * straight through the forearm, and it got worse the heavier the body, which is
+   * backwards.
+   *
+   * Solving from the hip inward fixes both: the outer surface lands just inside the
+   * widest point of the pelvis, whatever size the thigh is.
+   */
+  const outer = d.hip.a * THIGH_WITHIN_HIP
+  // Two thighs are wider than the pelvis on almost every body, so at the top they
+  // overlap toward the midline — which is exactly what adductors do. The floor is
+  // low because on genuinely thick legs the overlap is genuinely large: a 31in
+  // thigh on 40in hips touches its neighbour the whole way up, and a higher floor
+  // pushed the outer surface back outside the pelvis to make room.
+  const hipX = side * Math.max(d.thighR * 0.3, outer - d.thighR)
   const ankleX = side * Math.max(d.ankleR * 1.6, d.thighR * 0.62)
   const at = (f: number) => hipX + (ankleX - hipX) * f
   return {
