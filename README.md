@@ -255,8 +255,28 @@ anchors every limb belly between two joints, so a belly and its bone agree on wh
 they are — and it means 40-odd movement archetypes cover all 59 exercises with no
 model files and nothing to license, exactly like the physique model.
 
-Three things were worth getting right, and each was wrong first:
+Several things were worth getting right, and each was wrong first:
 
+- **Gravity.** The arms are children of the torso, so hinging forward carries them
+  backward with it — which drew the deadlift bar *behind* the lifter. A weight in
+  your hands does not care about your torso angle: it hangs straight down. Arm
+  angles are therefore authored as a **world-space lift from vertical** (0 hangs, 90
+  reaches forward, 180 overhead), cancelling the torso pitch. That one fix corrected
+  every hinged-torso lift at once.
+- **Leg geometry, solved rather than guessed.** Hip, knee and shoulder positions for
+  the main lifts are stated as fractions of standing height measured from the foot,
+  taken from real lifting positions, and the joint angles were found by numerical
+  search against them. Hand-authored angles had the deadlift at `knee: 42` with
+  `hipFlex: 62` — the knee bent *less* than the hip, which slopes the shin forward
+  and gives a leg reaching out like a chair. The real answer is the reverse:
+  `hipFlex: 51, knee: 62`. Those target positions are asserted, so it cannot drift.
+  One target turned out to be geometrically impossible — a hip below the knee needs
+  `hipFlex` past 90°, because the thigh has to angle *down* from hip to knee — and
+  the pose was wrongly blamed until the segment lengths were worked through.
+- **Flat feet.** The foot is a child of the shank, so the shank's angle carries it.
+  The ankle must cancel exactly `knee - hipFlex` or the figure stands on the edges of
+  its feet, capped at 30° of dorsiflexion because past that a real heel leaves the
+  floor.
 - **Joint signs.** Every limb hangs *below* its joint, so the rotation that carries
   a point forward carries a limb backward. Flexion is forward, so those angles are
   negated — except the knee, which travels the other way. Three of the four were

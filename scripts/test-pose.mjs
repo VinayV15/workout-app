@@ -168,6 +168,190 @@ console.log('\nno part comes adrift when posed')
 }
 
 // ---------------------------------------------------------------------------
+// Physics. A weight in your hands hangs straight down whatever your torso is
+// doing — the arms are children of the torso, so this has to be corrected for
+// explicitly, and getting it wrong drew the deadlift bar behind the lifter.
+// ---------------------------------------------------------------------------
+console.log('\nloads hang under gravity')
+{
+  /** Angle of the upper arm away from straight down, in degrees, in world space. */
+  const armAngle = (pose, side) => {
+    const idx = side === 'right' ? 0 : 1
+    const t = segmentTransforms(F, pose)
+    const sh = applyTransform(t[`upperArm:${side}`], F.shoulder[idx])
+    const el = applyTransform(t[`upperArm:${side}`], F.elbow[idx])
+    const dy = sh[1] - el[1]
+    return (Math.atan2(Math.hypot(el[0] - sh[0], el[2] - sh[2]), dy) * 180) / Math.PI
+  }
+
+  /**
+   * Frames where the hands hold a free weight with the arm essentially hanging.
+   * The upper arm must be near vertical, whatever the torso is doing.
+   */
+  const HANGING = [
+    ['hinge_deadlift', 0], ['hinge_deadlift', 1], ['hinge_deadlift', 2], ['hinge_deadlift', 3],
+    ['hinge_rdl', 0], ['hinge_rdl', 1], ['hinge_rdl', 2], ['hinge_rdl', 3],
+    ['row_bent', 0], ['row_supported', 0], ['row_rear_delt', 0],
+    ['carry', 0], ['carry', 1], ['carry', 2],
+    ['curl_incline', 0], ['curl', 0], ['shrug', 0], ['shrug', 2],
+    ['calf_raise', 0], ['calf_raise', 2], ['lunge', 0], ['hinge_deadlift', 3],
+  ]
+  const notHanging = []
+  for (const [key, i] of HANGING) {
+    const f = POSE_ARCHETYPES[key][i]
+    for (const side of ['right', 'left']) {
+      const a = armAngle(f.pose, side)
+      if (a > 18) notHanging.push(`${key}/${f.label}=${a.toFixed(0)}°`)
+    }
+  }
+  check('a held weight hangs within 18° of vertical', notHanging.length === 0, [...new Set(notHanging)].join(' '))
+
+  // The regression itself: before the fix, the deadlift set-up put the arm 58°
+  // off vertical — behind the lifter, which is a different exercise.
+  const dl = POSE_ARCHETYPES.hinge_deadlift[0].pose
+  check('the deadlift bar hangs in front of the shins, not behind', armAngle(dl, 'right') < 10, `${armAngle(dl, 'right').toFixed(0)}°`)
+
+  /** The wrist must be below the shoulder, and roughly under it, for a hanging arm. */
+  const wristUnderShoulder = (pose, side) => {
+    const idx = side === 'right' ? 0 : 1
+    const t = segmentTransforms(F, pose)
+    const sh = applyTransform(t.torso, F.shoulder[idx])
+    const wr = applyTransform(t[`forearm:${side}`], F.wrist[idx])
+    return { below: wr[1] < sh[1] - 8, offset: Math.abs(wr[2] - sh[2]) }
+  }
+  const misplaced = []
+  for (const [key, i] of HANGING) {
+    const f = POSE_ARCHETYPES[key][i]
+    const r = wristUnderShoulder(f.pose, 'right')
+    if (!r.below || r.offset > 7) misplaced.push(`${key}/${f.label}(dz ${r.offset.toFixed(1)})`)
+  }
+  check('and the hand sits under the shoulder', misplaced.length === 0, [...new Set(misplaced)].join(' '))
+}
+
+console.log('\npresses put the hands where the load is')
+{
+  const handHeight = (pose) => {
+    const t = segmentTransforms(F, pose)
+    return applyTransform(t['forearm:right'], F.wrist[0])[1] - applyTransform(t.torso, F.shoulder[0])[1]
+  }
+  // Lying on a bench, the bar is above you: the hand must end up above the shoulder.
+  const bench = POSE_ARCHETYPES.press_bench
+  check('a bench press locks out with the hands above the shoulders', handHeight(bench[0].pose) > 8, handHeight(bench[0].pose).toFixed(1))
+  check('and at the chest they are much lower', handHeight(bench[2].pose) < handHeight(bench[0].pose) - 8)
+  // Standing overhead press: hands finish above the head.
+  const ohp = POSE_ARCHETYPES.press_overhead
+  check('an overhead press finishes with the hands overhead', handHeight(ohp[2].pose) > 12, handHeight(ohp[2].pose).toFixed(1))
+  check('and starts at about shoulder height', Math.abs(handHeight(ohp[0].pose)) < 12)
+  // A pulldown starts overhead and finishes low.
+  const pd = POSE_ARCHETYPES.pull_down
+  check('a pulldown starts with the hands overhead', handHeight(pd[0].pose) > 10)
+  check('and finishes at the chest', handHeight(pd[2].pose) < handHeight(pd[0].pose) - 10)
+  // A pull-up: the hands stay put and the BODY moves, so measured against the
+  // shoulder the hand gets relatively lower as you rise.
+  const pu = POSE_ARCHETYPES.pull_up
+  check('a pull-up starts with the hands well above the shoulders', handHeight(pu[0].pose) > 10)
+  check('and the shoulders come up to the hands', handHeight(pu[2].pose) < handHeight(pu[0].pose) - 8)
+}
+
+/**
+ * Joint positions against real lifting geometry, measured relative to the foot and
+ * as fractions of standing height. These numbers are what the angles were solved
+ * against, so they are the thing that actually pins the diagrams to reality — the
+ * angles themselves are just the solution.
+ */
+console.log('\nskeletons match real lifting geometry')
+{
+  const H = 70
+  const rel = (pose) => {
+    const t = segmentTransforms(F, pose)
+    const an = applyTransform(t['shank:right'], F.ankle[0])
+    const g = (seg, p) => {
+      const q = applyTransform(t[seg], p)
+      return [(q[2] - an[2]) / H, (q[1] - an[1]) / H]
+    }
+    return { knee: g('thigh:right', F.knee[0]), hip: g('thigh:right', F.hip[0]), shoulder: g('torso', F.shoulder[0]) }
+  }
+  // z forward, y up, both as a fraction of height, from the ankle. Ankle is 0.04H up.
+  const T = (kz, ky, hz, hy, sz, sy) => ({ knee: [kz, ky - 0.04], hip: [hz, hy - 0.04], shoulder: [sz, sy - 0.04] })
+  const CASES = [
+    ['hinge_deadlift', 0, T(0.02, 0.28, -0.12, 0.42, 0.03, 0.62), 'shins near vertical, hips back and high'],
+    ['hinge_deadlift', 2, T(0.0, 0.29, -0.07, 0.5, 0.01, 0.72), 'past the knees, still angled'],
+    ['hinge_rdl', 1, T(0.0, 0.29, -0.09, 0.48, 0.02, 0.7), 'knees barely bent, hips back'],
+    ['hinge_rdl', 2, T(-0.01, 0.29, -0.13, 0.44, -0.02, 0.58), 'hamstrings at length'],
+    // Derived from the segment lengths rather than guessed: with thigh and shank
+    // both about 0.245H, a hip BELOW the knee forces hipFlex past 90, which in turn
+    // fixes where the hip can be. The first target here asked for a hip position no
+    // leg can reach, and the pose was blamed for it.
+    ['squat_back', 2, T(0.104, 0.302, -0.137, 0.259, 0.002, 0.482), 'hip crease below the knee'],
+    ['row_bent', 0, T(0.01, 0.28, -0.1, 0.45, 0.03, 0.64), 'hinged to about 45 degrees'],
+  ]
+  const off = []
+  for (const [key, i, target, why] of CASES) {
+    const got = rel(POSE_ARCHETYPES[key][i].pose)
+    for (const j of ['knee', 'hip', 'shoulder']) {
+      // 0.06H is about 4in on a 70in figure — tight enough to catch a wrong
+      // exercise, loose enough that stance and build can vary.
+      const d = Math.hypot(got[j][0] - target[j][0], got[j][1] - target[j][1])
+      if (d > 0.06) off.push(`${key}[${i}] ${j} out by ${(d * H).toFixed(1)}in (${why})`)
+    }
+  }
+  check('hips, knees and shoulders land where the lift puts them', off.length === 0, off.join('; '))
+
+  // The specific error the deadlift had: the shin must not slope forward, because
+  // that is a leg reaching out in front like a chair rather than a lifting stance.
+  const shinLean = (pose) => {
+    const t = segmentTransforms(F, pose)
+    const kn = applyTransform(t['thigh:right'], F.knee[0])
+    const an = applyTransform(t['shank:right'], F.ankle[0])
+    return kn[2] - an[2]
+  }
+  check('the deadlift knee sits in front of the ankle', shinLean(POSE_ARCHETYPES.hinge_deadlift[0].pose) > 0, shinLean(POSE_ARCHETYPES.hinge_deadlift[0].pose).toFixed(1))
+  check('as does the bent-row knee', shinLean(POSE_ARCHETYPES.row_bent[0].pose) > 0)
+  check('and the squat knee travels further forward still', shinLean(POSE_ARCHETYPES.squat_back[2].pose) > 4)
+}
+
+/** A foot on the floor has to be level, or the figure balances on its toes. */
+console.log('\nfeet stay flat on the floor')
+{
+  const STANDING = [
+    'hinge_deadlift', 'hinge_rdl', 'row_bent', 'row_supported', 'row_rear_delt',
+    'squat_back', 'squat_front', 'curl', 'curl_incline', 'shrug', 'raise_lateral',
+    'extension_pushdown', 'press_overhead', 'carry', 'calf_raise',
+  ]
+  const tilted = []
+  for (const key of STANDING) {
+    for (const f of POSE_ARCHETYPES[key]) {
+      // Calf raises are supposed to be on the toes, so skip their lifted frames.
+      if (key === 'calf_raise' && f.label !== 'Set up') continue
+      const posed = poseGrids(BONES, P.lean, f.pose)
+      const heel = posed.find((g) => g.name === 'heel-R')
+      const toe = posed.filter((g) => g.name.startsWith('metatarsal-R'))
+      if (!heel || !toe.length) continue
+      const hy = centroid(heel)[1]
+      const ty = toe.reduce((a, g) => a + centroid(g)[1], 0) / toe.length
+      if (Math.abs(hy - ty) > 2.5) tilted.push(`${key}/${f.label}=${(hy - ty).toFixed(1)}in`)
+    }
+  }
+  check('the sole is level in every standing frame', tilted.length === 0, tilted.join(' '))
+}
+
+console.log('\njoint ranges stay human')
+{
+  const limbs = Object.entries(POSE_ARCHETYPES).flatMap(([key, frames]) =>
+    frames.flatMap((f) => [f.pose.both, f.pose.left, f.pose.right].filter(Boolean).map((l) => ({ key, label: f.label, l }))),
+  )
+  const bad = (name, pred) => limbs.filter((x) => x.l[name] !== undefined && pred(x.l[name])).map((x) => `${x.key}/${x.label}:${name}=${x.l[name]}`)
+  check('no knee bends backward', bad('knee', (v) => v < 0).length === 0, bad('knee', (v) => v < 0).join(' '))
+  check('no knee bends past 145°', bad('knee', (v) => v > 145).length === 0, bad('knee', (v) => v > 145).join(' '))
+  check('no elbow bends backward', bad('elbow', (v) => v < 0).length === 0, bad('elbow', (v) => v < 0).join(' '))
+  check('no elbow bends past 150°', bad('elbow', (v) => v > 150).length === 0, bad('elbow', (v) => v > 150).join(' '))
+  check('no hip flexes past 130°', bad('hipFlex', (v) => v > 130).length === 0, bad('hipFlex', (v) => v > 130).join(' '))
+  check('no hip extends past 45° behind', bad('hipFlex', (v) => v < -45).length === 0, bad('hipFlex', (v) => v < -45).join(' '))
+  check('no shoulder abducts past 180°', bad('shoulderAbduct', (v) => v > 180 || v < -20).length === 0)
+  check('no torso hinges past 90°', Object.entries(POSE_ARCHETYPES).flatMap(([k, fr]) => fr.filter((f) => (f.pose.torsoPitch ?? 0) > 90 || (f.pose.torsoPitch ?? 0) < -30).map((f) => `${k}/${f.label}`)).length === 0)
+}
+
+// ---------------------------------------------------------------------------
 // Anchoring
 // ---------------------------------------------------------------------------
 console.log('\nanchoring puts the body back in contact with the world')

@@ -1,4 +1,4 @@
-import type { Pose } from './pose'
+import type { LimbPose, Pose } from './pose'
 import type { PresetView } from '../components/BodyScan'
 
 /**
@@ -30,12 +30,56 @@ export interface GuideFrame {
 // Building blocks
 // ---------------------------------------------------------------------------
 
-/** Arms holding a bar across the upper back. */
+/**
+ * Arm angles for a torso pitched `pitch` degrees, with `lift` measured from
+ * straight-down in WORLD space: 0 hangs vertically, 90 reaches forward level, 180
+ * is straight overhead.
+ *
+ * This exists because the arms are children of the torso, so pitching the torso
+ * forward carries them backward with it. A weight in your hands does not care about
+ * your torso angle — it hangs straight down — so a bent-over row authored with the
+ * arms "down" relative to the torso put them out behind the body, which reads as
+ * the bar being *behind* the lifter. On a deadlift that is not a cosmetic problem:
+ * it shows the wrong exercise.
+ *
+ * `shoulderFlex` is applied as a rotation opposite the torso pitch, so the net
+ * world angle is `flex - pitch` — hence `pitch + lift` to land on `lift`.
+ */
+const arms = (pitch: number, lift = 0, extra: LimbPose = {}): LimbPose => ({
+  elbow: 6,
+  ...extra,
+  shoulderFlex: pitch + lift,
+})
+
+/** Human limit on pulling the toes up. Past this a real heel leaves the floor. */
+const MAX_DORSIFLEX = 30
+
+/**
+ * A leg standing on a flat floor.
+ *
+ * The sole has to stay level, and it does not do that on its own: the foot is a
+ * child of the shank, so the shank's angle carries it. Net shank rotation is
+ * `knee - hipFlex`, so the ankle has to cancel exactly that. Authoring the ankle by
+ * hand had feet pointing into the floor at odd angles in half the squat frames.
+ *
+ * Note which way round the joints go in a hinge: `knee` larger than `hipFlex` tilts
+ * the shin *back*, putting the knee in front of the ankle — which is the deadlift
+ * setup. Getting that pair backwards is what made the first version's legs reach out
+ * in front like a chair.
+ */
+const leg = (hipFlex: number, knee: number, extra: LimbPose = {}): LimbPose => ({
+  hipFlex,
+  knee,
+  ankle: Math.min(MAX_DORSIFLEX, knee - hipFlex),
+  ...extra,
+})
+
+/** Arms holding a bar across the upper back. Fixed to the torso, so it travels with it. */
 const BAR_ON_BACK = { shoulderAbduct: 42, shoulderFlex: -12, elbow: 105 }
-/** Arms holding a bar at the shoulders, elbows in front. */
+/** Arms holding a bar at the shoulders, elbows in front. Also fixed to the torso. */
 const BAR_AT_FRONT = { shoulderFlex: 55, shoulderAbduct: 18, elbow: 130 }
-/** Arms hanging straight, holding something. */
-const ARMS_HANGING = { shoulderFlex: 4, elbow: 6 }
+/** Arms hanging straight from an upright torso, holding something. */
+const ARMS_HANGING = arms(0)
 /** Seated: hips and knees folded so the figure reads as sitting. */
 const SEATED = { hipFlex: 88, knee: 88 }
 /** Lying on a bench with the feet planted. */
@@ -53,19 +97,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Descend',
       caption: 'Break at the hips and knees together, knees tracking out over your feet.',
-      pose: { torsoPitch: 18, both: { ...BAR_ON_BACK, hipFlex: 55, knee: 55, ankle: 10 } },
+      pose: { torsoPitch: 30, both: { ...BAR_ON_BACK, ...leg(62, 84) } },
       view: 'side',
     },
     {
       label: 'Bottom',
       caption: 'Hip crease below the knee, weight through the middle of the foot, spine still neutral.',
-      pose: { torsoPitch: 28, both: { ...BAR_ON_BACK, hipFlex: 100, knee: 105, ankle: 20 } },
+      pose: { torsoPitch: 32, both: { ...BAR_ON_BACK, ...leg(100, 125) } },
       view: 'side',
     },
     {
       label: 'Drive up',
       caption: 'Push the floor away and lead with the chest — hips and shoulders rise together.',
-      pose: { torsoPitch: 10, both: { ...BAR_ON_BACK, hipFlex: 30, knee: 30, ankle: 6 } },
+      pose: { torsoPitch: 15, both: { ...BAR_ON_BACK, ...leg(30, 42) } },
       view: 'side',
     },
   ],
@@ -80,19 +124,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Descend',
       caption: 'Straight down with an upright torso — the front rack punishes any forward lean.',
-      pose: { torsoPitch: 8, both: { ...BAR_AT_FRONT, hipFlex: 55, knee: 60, ankle: 12 } },
+      pose: { torsoPitch: 12, both: { ...BAR_AT_FRONT, ...leg(64, 86) } },
       view: 'side',
     },
     {
       label: 'Bottom',
       caption: 'Deep, knees forward, elbows still pointing up so the bar stays on the shelf.',
-      pose: { torsoPitch: 14, both: { ...BAR_AT_FRONT, hipFlex: 105, knee: 115, ankle: 24 } },
+      pose: { torsoPitch: 15, both: { ...BAR_AT_FRONT, ...leg(102, 126) } },
       view: 'side',
     },
     {
       label: 'Stand',
       caption: 'Drive straight up, keeping the elbows high all the way.',
-      pose: { torsoPitch: 6, both: { ...BAR_AT_FRONT, hipFlex: 28, knee: 30, ankle: 6 } },
+      pose: { torsoPitch: 8, both: { ...BAR_AT_FRONT, ...leg(28, 40) } },
       view: 'side',
     },
   ],
@@ -123,19 +167,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Bar over mid-foot, shins close, hips high, back flat and braced.',
-      pose: { torsoPitch: 58, both: { ...ARMS_HANGING, hipFlex: 62, knee: 42 } },
+      pose: { torsoPitch: 44, both: { ...arms(44), ...leg(51, 62) } },
       view: 'side',
     },
     {
       label: 'Break the floor',
       caption: 'Push the floor away — the bar leaves the ground before the hips rise.',
-      pose: { torsoPitch: 52, both: { ...ARMS_HANGING, hipFlex: 50, knee: 28 } },
+      pose: { torsoPitch: 41, both: { ...arms(41), ...leg(44, 50) } },
       view: 'side',
     },
     {
       label: 'Knees back',
       caption: 'Bar past the knees, torso still angled, hips and shoulders rising together.',
-      pose: { torsoPitch: 30, both: { ...ARMS_HANGING, hipFlex: 28, knee: 12 } },
+      pose: { torsoPitch: 27, both: { ...arms(27), ...leg(26, 29) } },
       view: 'side',
     },
     {
@@ -150,25 +194,25 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Standing tall, bar against your thighs, knees unlocked but not bent.',
-      pose: { both: { ...ARMS_HANGING, knee: 8 } },
+      pose: { both: { ...ARMS_HANGING, ...leg(0, 8) } },
       view: 'side',
     },
     {
       label: 'Hinge',
       caption: 'Push the hips back and slide the bar down your legs — this is a hinge, not a squat.',
-      pose: { torsoPitch: 40, both: { ...ARMS_HANGING, hipFlex: 42, knee: 14 } },
+      pose: { torsoPitch: 34, both: { ...arms(34), ...leg(32, 35) } },
       view: 'side',
     },
     {
       label: 'Stretch',
       caption: 'Stop where the hamstrings run out of length, back still flat. Usually mid-shin.',
-      pose: { torsoPitch: 72, both: { ...ARMS_HANGING, hipFlex: 74, knee: 16 } },
+      pose: { torsoPitch: 49, both: { ...arms(49), ...leg(54, 57) } },
       view: 'side',
     },
     {
       label: 'Stand',
       caption: 'Drive the hips forward to stand, finishing with the glutes locked.',
-      pose: { torsoPitch: 20, both: { ...ARMS_HANGING, hipFlex: 22, knee: 10 } },
+      pose: { torsoPitch: 20, both: { ...arms(20), ...leg(18, 22) } },
       view: 'side',
     },
   ],
@@ -289,19 +333,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Supported on straight arms, chest slightly forward, legs steady beneath you.',
-      pose: { torsoPitch: 14, both: { shoulderFlex: -12, shoulderAbduct: 10, elbow: 6, hipFlex: -8, knee: 30 } },
+      pose: { torsoPitch: 14, both: { ...arms(14, -6, { shoulderAbduct: 10, elbow: 6 }), hipFlex: -8, knee: 30 } },
       view: 'side',
     },
     {
       label: 'Lower',
       caption: 'Bend the elbows and let the chest travel forward until the upper arms are level.',
-      pose: { torsoPitch: 26, both: { shoulderFlex: -40, shoulderAbduct: 18, elbow: 92, hipFlex: -8, knee: 40 } },
+      pose: { torsoPitch: 26, both: { ...arms(26, -34, { shoulderAbduct: 18, elbow: 92 }), hipFlex: -8, knee: 40 } },
       view: 'side',
     },
     {
       label: 'Press',
       caption: 'Drive back up to straight arms. More forward lean means more chest, less triceps.',
-      pose: { torsoPitch: 14, both: { shoulderFlex: -12, shoulderAbduct: 10, elbow: 6, hipFlex: -8, knee: 30 } },
+      pose: { torsoPitch: 14, both: { ...arms(14, -6, { shoulderAbduct: 10, elbow: 6 }), hipFlex: -8, knee: 30 } },
       view: 'side',
     },
   ],
@@ -402,19 +446,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Seated with the thighs secured, arms overhead, torso just off vertical.',
-      pose: { torsoPitch: -8, both: { ...SEATED, shoulderFlex: 12, shoulderAbduct: 150, elbow: 8 } },
+      pose: { torsoPitch: -8, both: { ...SEATED, ...arms(-8, 8, { shoulderAbduct: 150, elbow: 8 }) } },
       view: 'front',
     },
     {
       label: 'Pull',
       caption: 'Drive the elbows down and back, leading with the shoulder blades.',
-      pose: { torsoPitch: -12, both: { ...SEATED, shoulderFlex: 12, shoulderAbduct: 96, elbow: 68 } },
+      pose: { torsoPitch: -12, both: { ...SEATED, ...arms(-12, 8, { shoulderAbduct: 96, elbow: 68 }) } },
       view: 'front',
     },
     {
       label: 'Bottom',
       caption: 'Bar to the upper chest, chest lifted, lats fully shortened.',
-      pose: { torsoPitch: -16, both: { ...SEATED, shoulderFlex: 14, shoulderAbduct: 44, elbow: 112 } },
+      pose: { torsoPitch: -16, both: { ...SEATED, ...arms(-16, 8, { shoulderAbduct: 44, elbow: 112 }) } },
       view: 'front',
     },
   ],
@@ -423,19 +467,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Cable high, arms extended overhead, a fixed slight bend in the elbows.',
-      pose: { torsoPitch: 18, both: { shoulderFlex: 150, shoulderAbduct: 14, elbow: 14 } },
+      pose: { torsoPitch: 18, both: arms(18, 148, { shoulderAbduct: 14, elbow: 14 }) },
       view: 'side',
     },
     {
       label: 'Sweep',
       caption: 'Sweep the arms down in one arc, elbow angle never changing.',
-      pose: { torsoPitch: 18, both: { shoulderFlex: 80, shoulderAbduct: 12, elbow: 14 } },
+      pose: { torsoPitch: 18, both: arms(18, 74, { shoulderAbduct: 12, elbow: 14 }) },
       view: 'side',
     },
     {
       label: 'Finish',
       caption: 'Hands to your thighs, lats fully shortened. All shoulder, no elbow.',
-      pose: { torsoPitch: 18, both: { shoulderFlex: 4, shoulderAbduct: 10, elbow: 14 } },
+      pose: { torsoPitch: 18, both: arms(18, 4, { shoulderAbduct: 10, elbow: 14 }) },
       view: 'side',
     },
   ],
@@ -445,19 +489,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Hinged to about 45°, back flat and braced, bar hanging at arms’ length.',
-      pose: { torsoPitch: 62, both: { ...ARMS_HANGING, hipFlex: 58, knee: 26 } },
+      pose: { torsoPitch: 44, both: { ...arms(44), ...leg(44, 52) } },
       view: 'side',
     },
     {
       label: 'Pull',
       caption: 'Row toward the bottom of your ribs, elbows back rather than out.',
-      pose: { torsoPitch: 62, both: { shoulderFlex: -22, shoulderAbduct: 22, elbow: 54, hipFlex: 58, knee: 26 } },
+      pose: { torsoPitch: 44, both: { ...arms(44, -14, { shoulderAbduct: 20, elbow: 54 }), ...leg(44, 52) } },
       view: 'side',
     },
     {
       label: 'Squeeze',
       caption: 'Shoulder blades together at the top. The torso angle must not change.',
-      pose: { torsoPitch: 62, both: { shoulderFlex: -44, shoulderAbduct: 26, elbow: 96, hipFlex: 58, knee: 26 } },
+      pose: { torsoPitch: 44, both: { ...arms(44, -28, { shoulderAbduct: 24, elbow: 96 }), ...leg(44, 52) } },
       view: 'side',
     },
   ],
@@ -487,19 +531,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Chest on the pad so the torso cannot help, arms hanging straight down.',
-      pose: { torsoPitch: 74, both: { ...ARMS_HANGING, hipFlex: 68, knee: 22 } },
+      pose: { torsoPitch: 68, both: { ...arms(68), ...leg(28, 34) } },
       view: 'side',
     },
     {
       label: 'Pull',
       caption: 'Elbows back and down, squeezing the shoulder blades toward each other.',
-      pose: { torsoPitch: 74, both: { shoulderFlex: -26, shoulderAbduct: 28, elbow: 62, hipFlex: 68, knee: 22 } },
+      pose: { torsoPitch: 68, both: { ...arms(68, -16, { shoulderAbduct: 26, elbow: 62 }), ...leg(28, 34) } },
       view: 'side',
     },
     {
       label: 'Squeeze',
       caption: 'Hold the top for a beat. Chest support is what makes this all back and no cheating.',
-      pose: { torsoPitch: 74, both: { shoulderFlex: -46, shoulderAbduct: 30, elbow: 100, hipFlex: 68, knee: 22 } },
+      pose: { torsoPitch: 68, both: { ...arms(68, -30, { shoulderAbduct: 28, elbow: 100 }), ...leg(28, 34) } },
       view: 'side',
     },
   ],
@@ -550,19 +594,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Hinged forward with the arms hanging straight below the shoulders.',
-      pose: { torsoPitch: 76, both: { ...ARMS_HANGING, hipFlex: 70, knee: 20 } },
+      pose: { torsoPitch: 70, both: { ...arms(70), ...leg(30, 36) } },
       view: 'side',
     },
     {
       label: 'Raise',
       caption: 'Sweep the arms out to the sides with only a slight elbow bend.',
-      pose: { torsoPitch: 76, both: { shoulderAbduct: 50, shoulderFlex: 4, elbow: 18, hipFlex: 70, knee: 20 } },
+      pose: { torsoPitch: 70, both: { ...arms(70, 0, { shoulderAbduct: 50, elbow: 18 }), ...leg(30, 36) } },
       view: 'front',
     },
     {
       label: 'Top',
       caption: 'Arms level with the torso. Lead with the elbows, not the hands.',
-      pose: { torsoPitch: 76, both: { shoulderAbduct: 88, shoulderFlex: 4, elbow: 18, hipFlex: 70, knee: 20 } },
+      pose: { torsoPitch: 70, both: { ...arms(70, 0, { shoulderAbduct: 88, elbow: 18 }), ...leg(30, 36) } },
       view: 'front',
     },
   ],
@@ -636,19 +680,19 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Set up',
       caption: 'Chest against the pad so the upper arms cannot swing at all.',
-      pose: { torsoPitch: 68, both: { ...ARMS_HANGING, hipFlex: 62, knee: 24 } },
+      pose: { torsoPitch: 55, both: { ...arms(55), ...leg(12, 16) } },
       view: 'side',
     },
     {
       label: 'Curl',
       caption: 'Bend the elbows with the upper arms fixed and hanging.',
-      pose: { torsoPitch: 68, both: { shoulderFlex: 2, elbow: 66, hipFlex: 62, knee: 24 } },
+      pose: { torsoPitch: 55, both: { ...arms(55, 0, { elbow: 66 }), ...leg(12, 16) } },
       view: 'side',
     },
     {
       label: 'Top',
       caption: 'Squeeze, then lower under control to a dead-straight arm.',
-      pose: { torsoPitch: 68, both: { shoulderFlex: 2, elbow: 126, hipFlex: 62, knee: 24 } },
+      pose: { torsoPitch: 55, both: { ...arms(55, 0, { elbow: 126 }), ...leg(12, 16) } },
       view: 'side',
     },
   ],
@@ -814,8 +858,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       caption: 'Step forward and let both knees bend, torso staying upright.',
       pose: {
         both: { ...ARMS_HANGING },
-        right: { ...ARMS_HANGING, hipFlex: 42, knee: 48 },
-        left: { ...ARMS_HANGING, hipFlex: -14, knee: 34 },
+        right: { ...ARMS_HANGING, ...leg(42, 56) },
+        left: { ...ARMS_HANGING, hipFlex: -14, knee: 40, ankle: -20 },
       },
       view: 'side',
     },
@@ -824,8 +868,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       caption: 'Front thigh parallel, back knee just off the floor, weight through the front foot.',
       pose: {
         both: { ...ARMS_HANGING },
-        right: { ...ARMS_HANGING, hipFlex: 82, knee: 92 },
-        left: { ...ARMS_HANGING, hipFlex: -22, knee: 96 },
+        right: { ...ARMS_HANGING, ...leg(80, 100) },
+        left: { ...ARMS_HANGING, hipFlex: -22, knee: 100, ankle: -28 },
       },
       view: 'side',
     },
@@ -834,8 +878,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       caption: 'Push through the front foot to stand, keeping the torso vertical.',
       pose: {
         both: { ...ARMS_HANGING },
-        right: { ...ARMS_HANGING, hipFlex: 34, knee: 38 },
-        left: { ...ARMS_HANGING, hipFlex: -12, knee: 28 },
+        right: { ...ARMS_HANGING, ...leg(34, 46) },
+        left: { ...ARMS_HANGING, hipFlex: -12, knee: 34, ankle: -18 },
       },
       view: 'side',
     },
@@ -846,8 +890,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       label: 'Set up',
       caption: 'Back foot elevated behind you, front foot planted, torso upright.',
       pose: {
-        right: { ...ARMS_HANGING, hipFlex: 16, knee: 20 },
-        left: { ...ARMS_HANGING, hipFlex: -30, knee: 52 },
+        right: { ...ARMS_HANGING, ...leg(16, 24) },
+        left: { ...ARMS_HANGING, hipFlex: -30, knee: 58, ankle: -26 },
       },
       view: 'side',
     },
@@ -855,8 +899,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       label: 'Descend',
       caption: 'Drop straight down, letting the front knee travel forward over the foot.',
       pose: {
-        right: { ...ARMS_HANGING, hipFlex: 54, knee: 62 },
-        left: { ...ARMS_HANGING, hipFlex: -34, knee: 84 },
+        right: { ...ARMS_HANGING, ...leg(54, 66) },
+        left: { ...ARMS_HANGING, hipFlex: -34, knee: 90, ankle: -30 },
       },
       view: 'side',
     },
@@ -864,8 +908,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       label: 'Bottom',
       caption: 'Front thigh at or below parallel, back knee low, hips square.',
       pose: {
-        right: { ...ARMS_HANGING, hipFlex: 90, knee: 100 },
-        left: { ...ARMS_HANGING, hipFlex: -38, knee: 116 },
+        right: { ...ARMS_HANGING, ...leg(88, 106) },
+        left: { ...ARMS_HANGING, hipFlex: -38, knee: 120, ankle: -32 },
       },
       view: 'side',
     },
@@ -876,8 +920,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       label: 'Set up',
       caption: 'One foot planted on the box, the other on the floor behind you.',
       pose: {
-        right: { ...ARMS_HANGING, hipFlex: 74, knee: 80 },
-        left: { ...ARMS_HANGING, knee: 8 },
+        right: { ...ARMS_HANGING, ...leg(74, 86) },
+        left: { ...ARMS_HANGING, ...leg(0, 8) },
       },
       view: 'side',
     },
@@ -885,8 +929,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       label: 'Drive',
       caption: 'Push through the top foot only — resist pushing off the trailing leg.',
       pose: {
-        right: { ...ARMS_HANGING, hipFlex: 38, knee: 42 },
-        left: { ...ARMS_HANGING, hipFlex: -10, knee: 20 },
+        right: { ...ARMS_HANGING, ...leg(38, 50) },
+        left: { ...ARMS_HANGING, hipFlex: -10, knee: 26, ankle: -14 },
       },
       view: 'side',
     },
@@ -894,8 +938,8 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
       label: 'Top',
       caption: 'Stand tall on the box, then lower back down under control.',
       pose: {
-        right: { ...ARMS_HANGING, hipFlex: 6, knee: 6 },
-        left: { ...ARMS_HANGING, hipFlex: -18, knee: 26 },
+        right: { ...ARMS_HANGING, ...leg(6, 8) },
+        left: { ...ARMS_HANGING, hipFlex: -18, knee: 32, ankle: -20 },
       },
       view: 'side',
     },
@@ -963,7 +1007,7 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Pick up',
       caption: 'Hinge down, take the handles, and stand up with a flat back.',
-      pose: { torsoPitch: 56, both: { ...ARMS_HANGING, hipFlex: 58, knee: 40 } },
+      pose: { torsoPitch: 44, both: { ...arms(44), ...leg(51, 62) } },
       view: 'side',
     },
     {
@@ -975,7 +1019,7 @@ export const POSE_ARCHETYPES: Record<string, GuideFrame[]> = {
     {
       label: 'Walk',
       caption: 'Short, controlled steps. Do not lean away from the load or let a shoulder drop.',
-      pose: { right: { ...ARMS_HANGING, hipFlex: 26, knee: 22 }, left: { ...ARMS_HANGING, hipFlex: -12, knee: 16 } },
+      pose: { right: { ...ARMS_HANGING, ...leg(26, 30) }, left: { ...ARMS_HANGING, hipFlex: -12, knee: 20, ankle: -8 } },
       view: 'side',
     },
   ],
