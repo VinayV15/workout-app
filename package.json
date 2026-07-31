@@ -16,6 +16,7 @@
     "test:program": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-program.mjs",
     "test:pose": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-pose.mjs",
     "test:physique": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/test-physique.mjs",
+    "solve:poses": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./scripts/ts-register.mjs scripts/solve-poses.mjs",
     "icons": "node scripts/make-icons.mjs"
   },
   "dependencies": {

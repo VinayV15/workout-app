@@ -516,7 +516,8 @@ supabase/migrations/    the table and security policy sync needs, as a migration
 scripts/test-sync.mjs  sync merge tests (npm test)
 scripts/test-coach.mjs     fatigue, load accounting, units and CSV escaping
 scripts/test-gym.mjs       plate math, warm-up ramps, rest durations, PR detection
-scripts/test-pose.mjs      joint conventions, segment rigging, guide coverage
+scripts/test-pose.mjs      joint conventions, segment rigging, diagram physics
+scripts/solve-poses.mjs    derives pose angles from target joint positions (npm run solve:poses)
 scripts/test-program.mjs   block rotation, progression arithmetic and deloads
 scripts/test-physique.mjs  physique model + mesh tests
 src/components/        UI primitives and chart wrappers
