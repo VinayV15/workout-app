@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../lib/store'
-import { Button, Card, Chip, SectionTitle, Segmented, SeverityBadge, severityColor } from '../components/ui'
+import { Button, Card, Chip, ScrollRow, SectionTitle, Segmented, SeverityBadge, severityColor } from '../components/ui'
 import { TargetBars } from '../components/charts'
 import Plan from './Plan'
 import {
@@ -78,7 +78,7 @@ function Advice({ recs }: { recs: Recommendation[] }) {
           What to change
         </SectionTitle>
 
-        <div className="no-scrollbar -mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4">
+        <ScrollRow className="-mx-4 mb-3 gap-1.5 px-4" label="Sections">
           <Chip active={filter === 'all'} onClick={() => setFilter('all')}>
             All {recs.length}
           </Chip>
@@ -87,7 +87,7 @@ function Advice({ recs }: { recs: Recommendation[] }) {
               {TAG_LABEL[t]} {counts[t] ?? 0}
             </Chip>
           ))}
-        </div>
+        </ScrollRow>
 
         {filtered.length === 0 ? (
           <Card>

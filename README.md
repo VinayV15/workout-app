@@ -203,6 +203,59 @@ Sync is not a backup — it is a mirror, so a bad import propagates. Keep real b
 
 ---
 
+## How it looks
+
+The interface is built as glass: translucent surfaces with a lit upper rim, floating
+over two faint pools of coloured light that stay pinned to the viewport. Glass only
+reads as glass when there is something behind it to refract — on a flat single-colour
+page, translucency is invisible and every "frosted" surface is just another grey — so
+those pools are the thing that makes the rest work.
+
+There are deliberately **two materials**, not one:
+
+- **Panes** (`.card`) — the content surfaces. Translucent gradient, bright top edge, soft
+  drop shadow. No `backdrop-filter`: there are dozens on a screen and they sit on a
+  static backdrop, so a per-element blur would cost a great deal and change nothing you
+  could see.
+- **Glass** (`.glass`) — the chrome that genuinely floats over moving content: the tab
+  bar, the mobile header, bottom sheets. This is where a real backdrop blur earns its
+  cost, because there is scrolling content behind it. The saturation boost stops blurred
+  dark UI from going muddy grey.
+
+A third, `.track`, inverts the treatment — highlight along the bottom, shadow inside the
+top — so a segmented control reads as a groove with a raised thumb sliding in it.
+
+On a phone the tab bar is a **pill inset from all three edges**, so content scrolls
+visibly underneath it. That is the whole point of the material and is impossible with a
+bar welded to the bottom of the screen: nothing passes behind it.
+
+### Your accent colour
+
+*Settings → Profile → Accent colour.* Ten presets, all sitting at a similar lightness so
+switching hue does not make the app suddenly darker or washed out, plus a free-form
+colour picker for anything else. It syncs, so the app looks like yours on every device.
+
+The accent tints buttons, chips, meters, the segmented thumb, the active tab — **and the
+pools of light behind the glass**, which is what makes changing it re-tint the whole
+interface rather than just recolouring the controls.
+
+Two things are deliberately *not* accented:
+
+- **Charts** keep their own categorical palette. Those colours are chosen as a set, for
+  separability from one another; recolouring the first series to match a button would
+  make two lines on a chart harder to tell apart to gain nothing.
+- **Status colours** — the severity badges, the sync indicator — stay fixed. Severity is
+  meaning, not decoration: if it followed the accent, choosing red would make every
+  "Info" badge look like a critical warning. (Every badge carries an icon and a word too,
+  so none of it is colour-alone regardless.)
+
+Text on the accent flips between white and near-black by measured contrast, so the
+free-form picker is safe rather than restricted: choose pale yellow and the button labels
+go dark automatically instead of turning invisible. Swept across the hue circle in the
+tests, the worst case still clears 4.3:1. The one thing contrast cannot rescue is an
+accent too dark to see against the page at all, so that gets a warning rather than being
+silently allowed.
+
 ## What it tracks
 
 **Lifting.** 60+ exercises mapped to muscle groups and movement patterns, plus custom exercises. Log sets,
@@ -586,6 +639,7 @@ src/lib/calc.ts        all the sports-science math (1RM, VDOT, ACWR, Navy BF, TD
 src/lib/recommend.ts   the coaching engine and volume targets
 src/lib/program.ts     training blocks: rotation, double progression, deloads, presets
 src/lib/gym.ts         plate math, warm-up ramps, rest durations, PR detection
+src/lib/accent.ts      the user's accent: parsing, contrast, and which ink sits on it
 src/lib/dateRange.ts   range presets, resolution, bucketing, per-screen persistence
 src/lib/trends.ts      trend fits over a chosen range (calc.ts holds the coach's fixed ones)
 src/lib/strength.ts    per-exercise and per-muscle series, the 1RM summary and the total
@@ -612,6 +666,7 @@ scripts/test-range.mjs     range boundaries, month lengths, leap years, bucketin
 scripts/test-pose.mjs      joint conventions, segment rigging, diagram physics
 scripts/solve-poses.mjs    derives pose angles from target joint positions (npm run solve:poses)
 scripts/test-program.mjs   block rotation, progression arithmetic and deloads
+scripts/test-accent.mjs    accent parsing and contrast, swept across the hue circle
 scripts/test-analysis.mjs  the 1RM blend, distance conversion, per-exercise series
 scripts/test-physique.mjs  physique model + mesh tests
 src/components/        UI primitives and chart wrappers

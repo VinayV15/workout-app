@@ -80,7 +80,7 @@ export default function Onboarding() {
           <div
             key={i}
             className="h-1 flex-1 rounded-full"
-            style={{ background: i <= step ? 'var(--series-1)' : 'var(--surface-2)' }}
+            style={{ background: i <= step ? 'var(--accent)' : 'var(--surface-2)' }}
           />
         ))}
       </div>

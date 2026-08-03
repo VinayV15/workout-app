@@ -11,7 +11,7 @@ import {
 } from '../lib/runDistance'
 import type { Run, RunType } from '../lib/types'
 import { HARD_RUN_TYPES, RUN_TYPE_LABEL } from '../lib/types'
-import { Button, Card, Chip, Empty, Field, Row, SectionTitle, Segmented, SelectField, Sheet, Stat } from '../components/ui'
+import { Button, Card, Chip, Empty, Field, Row, ScrollRow, SectionTitle, Segmented, SelectField, Sheet, Stat } from '../components/ui'
 import { ChartFrame, SERIES, TimeSeries, niceDomain } from '../components/charts'
 import {
   RACE_DISTANCES,
@@ -121,7 +121,7 @@ function LogRun({ onSaved }: { onSaved: () => void }) {
   return (
     <div className="space-y-4">
       {prescribed && (
-        <div className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs" style={{ borderColor: 'color-mix(in oklab, var(--series-1) 40%, transparent)' }}>
+        <div className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs" style={{ borderColor: 'color-mix(in oklab, var(--accent) 40%, transparent)' }}>
           <span className="min-w-0">
             <span className="font-medium">Prescribed run</span>
             <span className="mt-0.5 block text-[11px] text-ink-2">
@@ -174,7 +174,7 @@ function LogRun({ onSaved }: { onSaved: () => void }) {
           />
         </div>
 
-        <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
+        <ScrollRow className="-mx-1 gap-1.5 px-1" label="Quick distances">
           {quick.map((q) => (
             <button
               key={q}
@@ -184,7 +184,7 @@ function LogRun({ onSaved }: { onSaved: () => void }) {
               {q} {du}
             </button>
           ))}
-        </div>
+        </ScrollRow>
 
         {pace && (
           <div className="rounded-xl bg-surface-2 px-3 py-2 text-xs">
@@ -658,7 +658,7 @@ function RunDistances() {
         <SectionTitle sub="Every run is converted to this distance, so the trend uses all of them">
           Distance
         </SectionTitle>
-        <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+        <ScrollRow className="-mx-4 gap-1.5 px-4" label="Distance">
           {RACE_DISTANCES.map((d) => (
             <Chip
               key={d.name}
@@ -671,7 +671,7 @@ function RunDistances() {
               {d.name}
             </Chip>
           ))}
-        </div>
+        </ScrollRow>
         <Field
           label={`Or any distance you like (${du})`}
           type="number"

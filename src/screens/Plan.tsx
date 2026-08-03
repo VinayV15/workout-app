@@ -80,7 +80,7 @@ function ActiveBlock({
           label: MUSCLE_LABEL[m],
           value,
           target,
-          color: short ? 'var(--warning)' : 'var(--series-1)',
+          color: short ? 'var(--warning)' : 'var(--accent)',
           note: short ? `${Math.ceil(target - value)} short` : undefined,
         }
       })
@@ -93,7 +93,7 @@ function ActiveBlock({
       <Card className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="mb-1 text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--series-1)' }}>
+            <div className="mb-1 text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--accent)' }}>
               Current block
             </div>
             <h3 className="text-base leading-snug font-semibold tracking-tight">{block.name}</h3>
@@ -119,7 +119,7 @@ function ActiveBlock({
               {done} / {total} sessions
             </span>
           </div>
-          <Meter value={done} target={total} color={SERIES.s1} />
+          <Meter value={done} target={total} color="var(--accent)" />
         </div>
 
         <div className="flex flex-wrap gap-1.5">
@@ -135,10 +135,10 @@ function ActiveBlock({
                   borderColor: isDone
                     ? 'color-mix(in oklab, var(--good) 45%, transparent)'
                     : isNext
-                      ? 'var(--series-1)'
+                      ? 'var(--accent)'
                       : 'var(--border)',
                   color: isDone ? 'var(--good)' : isNext ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  background: isNext ? 'color-mix(in oklab, var(--series-1) 12%, transparent)' : 'var(--surface-2)',
+                  background: isNext ? 'color-mix(in oklab, var(--accent) 12%, transparent)' : 'var(--surface-2)',
                 }}
               >
                 {isDone && <span aria-hidden>✓ </span>}
@@ -313,7 +313,7 @@ function SessionCard({
   return (
     <Card className="space-y-3">
       <div>
-        <div className="mb-1 text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--series-1)' }}>
+        <div className="mb-1 text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--accent)' }}>
           {heading}
         </div>
         <h3 className="text-base leading-snug font-semibold tracking-tight">{day.name}</h3>

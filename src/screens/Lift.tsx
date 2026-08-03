@@ -21,6 +21,7 @@ import {
   Chip,
   Empty,
   Field,
+  ScrollRow,
   SectionTitle,
   Segmented,
   SelectField,
@@ -205,7 +206,7 @@ function LogTab() {
       {planBlock && (
         <div
           className="flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs"
-          style={{ borderColor: 'color-mix(in oklab, var(--series-1) 40%, transparent)' }}
+          style={{ borderColor: 'color-mix(in oklab, var(--accent) 40%, transparent)' }}
         >
           <span className="min-w-0">
             <span className="font-medium">{workout.name || 'Planned session'}</span>
@@ -768,7 +769,7 @@ function ExercisePicker({
           onChange={(e) => setQuery(e.target.value)}
           autoFocus
         />
-        <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+        <ScrollRow className="-mx-4 gap-1.5 px-4" label="Exercises">
           <Chip active={muscle === 'all'} onClick={() => setMuscle('all')}>
             All
           </Chip>
@@ -777,7 +778,7 @@ function ExercisePicker({
               {MUSCLE_LABEL[m]}
             </Chip>
           ))}
-        </div>
+        </ScrollRow>
         <div className="space-y-1">
           {filtered.map((e) => (
             <div key={e.id} className="flex items-center gap-1 rounded-xl transition hover:bg-surface-2">
@@ -1171,7 +1172,7 @@ function ProgressTab() {
             { value: 'muscle', label: 'By muscle' },
           ]}
         />
-        <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+        <ScrollRow className="-mx-4 gap-1.5 px-4" label="Exercises">
           {kind === 'exercise'
             ? exercises.map((id) => (
                 <Chip key={id} active={scope?.kind === 'exercise' && scope.id === id} onClick={() => setExerciseId(id)}>
@@ -1183,22 +1184,22 @@ function ProgressTab() {
                   {MUSCLE_LABEL[m]}
                 </Chip>
               ))}
-        </div>
-        <div className="no-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4">
+        </ScrollRow>
+        <ScrollRow className="-mx-4 gap-1.5 px-4" label="Exercises">
           {metrics.map((m) => (
             <button
               key={m.key}
               onClick={() => setMetric(m.key)}
               className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                 activeMetric === m.key
-                  ? 'border-transparent bg-s1 text-white'
+                  ? 'accent-fill border-transparent'
                   : 'border-line bg-surface-2 text-ink-2 hover:text-ink'
               }`}
             >
               {m.label}
             </button>
           ))}
-        </div>
+        </ScrollRow>
         {kind === 'muscle' && (
           <p className="text-[11px] leading-relaxed text-ink-3">
             Everything that trains {scopeLabel.toLowerCase()}, directly or as an assister. A 1RM is not offered here

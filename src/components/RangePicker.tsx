@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { ScrollRow } from './ui'
 import {
   CALENDAR_PRESETS,
   DEFAULT_RANGE,
@@ -69,7 +70,7 @@ export default function RangePicker({
       }}
       className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
         range.preset === p
-          ? 'border-transparent bg-s1 text-white'
+          ? 'accent-fill border-transparent'
           : 'border-line bg-surface-2 text-ink-2 hover:text-ink'
       }`}
     >
@@ -79,7 +80,7 @@ export default function RangePicker({
 
   return (
     <div className="space-y-2">
-      <div className="no-scrollbar -mx-4 flex items-center gap-1.5 overflow-x-auto px-4">
+      <ScrollRow className="-mx-4 items-center gap-1.5 px-4" label="Date range">
         {ROLLING_PRESETS.map(chip)}
         {/* A divider, because rolling and calendar presets answer different
             questions and "30 days" sitting next to "This month" is confusing
@@ -89,7 +90,7 @@ export default function RangePicker({
         <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-line" />
         {chip('all')}
         {chip('custom')}
-      </div>
+      </ScrollRow>
 
       {customOpen && (
         <div className="flex flex-wrap items-end gap-2">

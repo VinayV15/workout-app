@@ -302,7 +302,7 @@ export default function Physique() {
           step={1}
           value={offset}
           onChange={(e) => setOffset(Number(e.target.value))}
-          className="w-full accent-[var(--series-1)]"
+          className="w-full accent-[var(--accent)]"
           aria-label="Date"
         />
         <div className="mt-1 flex justify-between text-[10px] text-ink-3">

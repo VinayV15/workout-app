@@ -14,6 +14,7 @@ import {
   signOutSync,
 } from '../lib/sync'
 import { Button, Card, Chip, Field, SectionTitle, Segmented, SelectField } from '../components/ui'
+import { ACCENT_PRESETS, DEFAULT_ACCENT, normaliseAccent, readableOnPage } from '../lib/accent'
 import SignInForm from '../components/SignInForm'
 import {
   GOAL_LABEL,
@@ -154,6 +155,11 @@ export default function Settings() {
               ]}
             />
           </div>
+
+          <AccentPicker
+            value={data.profile.accentHex}
+            onChange={(accentHex) => setProfile({ accentHex })}
+          />
         </Card>
       </section>
 
@@ -304,7 +310,7 @@ export default function Settings() {
               e.target.value = ''
             }}
           />
-          {status && <p className="text-xs" style={{ color: 'var(--series-1)' }}>{status}</p>}
+          {status && <p className="text-xs" style={{ color: 'var(--accent)' }}>{status}</p>}
 
           <p className="text-[11px] leading-relaxed text-ink-3">
             Export is your backup even with sync switched on — it is the only copy that survives losing access to
@@ -698,7 +704,7 @@ function SyncSection() {
                 type="checkbox"
                 checked={sync.autoSync}
                 onChange={(e) => toggleAutoSync(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-[var(--series-1)]"
+                className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
               />
               <span>
                 <span className="font-medium">Sync automatically</span>
@@ -725,7 +731,7 @@ function SyncSection() {
         {message && (
           <p
             className="text-xs leading-relaxed"
-            style={{ color: message.kind === 'error' ? 'var(--critical)' : 'var(--series-1)' }}
+            style={{ color: message.kind === 'error' ? 'var(--critical)' : 'var(--accent)' }}
           >
             {message.kind === 'error' && <span aria-hidden>⚠ </span>}
             {message.text}
@@ -748,5 +754,113 @@ function SyncSection() {
         </div>
       </Card>
     </section>
+  )
+}
+
+
+/**
+ * The accent picker.
+ *
+ * Presets plus a free-form colour input, because "any colour you like" was the ask and
+ * a fixed palette is not that — but the presets are first and are all chosen at a
+ * similar lightness, so the easy path is also the one that cannot make the app
+ * unreadable.
+ *
+ * The free-form path is made safe rather than restricted: text sitting on the accent
+ * flips between white and near-black automatically by contrast (see lib/accent.ts), so
+ * a pale yellow gets dark labels instead of invisible white ones. The one thing the
+ * picker cannot fix by itself is an accent too dark to see against the page at all, so
+ * that gets a warning instead of being silently allowed.
+ */
+function AccentPicker({
+  value,
+  onChange,
+}: {
+  value: string | undefined
+  onChange: (hex: string | undefined) => void
+}) {
+  const current = normaliseAccent(value)
+  const isPreset = ACCENT_PRESETS.some((p) => p.hex.toLowerCase() === current)
+  const dim = !readableOnPage(current)
+
+  return (
+    <div>
+      <span className="label">Accent colour</span>
+      <div className="flex flex-wrap gap-2">
+        {ACCENT_PRESETS.map((p) => {
+          const active = p.hex.toLowerCase() === current
+          return (
+            <button
+              key={p.hex}
+              type="button"
+              onClick={() => onChange(p.hex === DEFAULT_ACCENT ? undefined : p.hex)}
+              aria-label={p.name}
+              aria-pressed={active}
+              title={p.name}
+              className="relative h-9 w-9 rounded-full border transition active:scale-95"
+              style={{
+                background: `linear-gradient(176deg, color-mix(in oklab, ${p.hex} 86%, white), ${p.hex})`,
+                borderColor: active ? 'var(--text-primary)' : 'var(--border)',
+                boxShadow: active
+                  ? `inset 0 1px 0 rgba(255,255,255,0.3), 0 0 0 2px color-mix(in oklab, ${p.hex} 45%, transparent)`
+                  : 'inset 0 1px 0 rgba(255,255,255,0.3)',
+              }}
+            >
+              {active && (
+                <span
+                  aria-hidden
+                  className="absolute inset-0 flex items-center justify-center text-[13px] font-bold"
+                  style={{ color: 'var(--accent-ink)' }}
+                >
+                  ✓
+                </span>
+              )}
+            </button>
+          )
+        })}
+
+        {/* Native colour input: the platform picker is better than anything worth
+            rebuilding here, and it is the only control that offers every colour. */}
+        <label
+          className="relative h-9 w-9 cursor-pointer overflow-hidden rounded-full border transition active:scale-95"
+          style={{
+            background:
+              'conic-gradient(from 0deg, #ff5f6d, #ffc371, #47e0a0, #38b6ff, #a86cff, #ff5f6d)',
+            borderColor: !isPreset ? 'var(--text-primary)' : 'var(--border)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.3)',
+          }}
+          title="Any colour"
+        >
+          <input
+            type="color"
+            value={current}
+            onChange={(e) => onChange(e.target.value)}
+            className="absolute inset-0 cursor-pointer opacity-0"
+            aria-label="Custom accent colour"
+          />
+          {!isPreset && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 flex items-center justify-center text-[13px] font-bold text-white mix-blend-difference"
+            >
+              ✓
+            </span>
+          )}
+        </label>
+      </div>
+
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+        Tints buttons, chips, meters and the light behind the glass.{' '}
+        {isPreset ? '' : `Currently ${current}. `}
+        Charts keep their own palette, which is chosen as a set so the lines stay
+        distinguishable from one another.
+      </p>
+      {dim && (
+        <p className="mt-1 text-[11px] leading-relaxed text-warning">
+          This colour is very close to the page background, so accented text and thin
+          lines will be hard to read. A lighter shade will hold up better.
+        </p>
+      )}
+    </div>
   )
 }

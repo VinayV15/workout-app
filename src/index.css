@@ -34,6 +34,41 @@
   --serious: #ec835a;
   --critical: #d03b3b;
   --delta-good: #0ca30c;
+
+  /*
+    Accent. Set at runtime from the user's choice in Settings (see lib/accent.ts);
+    this is the fallback for the first paint, before React has mounted, so the app
+    never flashes an unstyled colour. Deliberately NOT --series-1: charts keep the
+    validated categorical palette whatever the user picks.
+  */
+  --accent: #9d7bff;
+  --accent-ink: #ffffff;
+
+  /*
+    Glass.
+
+    Two materials, not one. `--glass-*` is for chrome that genuinely floats over
+    moving content — the nav bar, the header, sheets — and pairs with a real
+    backdrop-filter. `--pane-*` is for the many content cards, which sit directly
+    on the page background: blurring a flat backdrop produces no visible result,
+    so they get the translucency, the gradient and the specular edge without the
+    per-element filter. That distinction is what keeps a chart-dense screen on a
+    phone at 60fps.
+  */
+  --glass-bg: rgba(28, 28, 34, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+  --glass-shadow: rgba(0, 0, 0, 0.44);
+
+  --pane-from: rgba(255, 255, 255, 0.062);
+  --pane-to: rgba(255, 255, 255, 0.022);
+  --pane-border: rgba(255, 255, 255, 0.1);
+  --pane-highlight: rgba(255, 255, 255, 0.14);
+  --pane-shadow: rgba(0, 0, 0, 0.3);
+
+  /* Ambience: two faint pools of light that give the glass something to refract. */
+  --ambience-1: color-mix(in oklab, var(--accent) 26%, transparent);
+  --ambience-2: color-mix(in oklab, var(--accent) 13%, transparent);
 }
 
 :root[data-theme='light'] {
@@ -60,6 +95,21 @@
   --series-8: #e34948;
 
   --delta-good: #006300;
+
+  --accent: #7c3aed;
+  --accent-ink: #ffffff;
+
+  /* Light glass is darker-tinted, not lighter: white on white has no edge. */
+  --glass-bg: rgba(255, 255, 255, 0.66);
+  --glass-border: rgba(11, 11, 11, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-shadow: rgba(11, 11, 11, 0.14);
+
+  --pane-from: rgba(255, 255, 255, 0.86);
+  --pane-to: rgba(255, 255, 255, 0.55);
+  --pane-border: rgba(11, 11, 11, 0.09);
+  --pane-highlight: rgba(255, 255, 255, 0.95);
+  --pane-shadow: rgba(11, 11, 11, 0.08);
 }
 
 @theme inline {
@@ -81,110 +131,325 @@
   --color-warning: var(--warning);
   --color-serious: var(--serious);
   --color-critical: var(--critical);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
   --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
-* {
-  -webkit-tap-highlight-color: transparent;
-}
+/*
+  Element resets, in `@layer base` on purpose.
 
-html,
-body {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  background: var(--page);
-  color: var(--text-primary);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  overscroll-behavior-y: none;
-}
-
-/* Native-feeling inputs that still respect the token set. */
-input,
-select,
-textarea,
-button {
-  font: inherit;
-  color: inherit;
-}
-
-input[type='number'] {
-  -moz-appearance: textfield;
-}
-input[type='number']::-webkit-outer-spin-button,
-input[type='number']::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.field {
-  width: 100%;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.6rem 0.7rem;
-  outline: none;
-  transition: border-color 120ms ease;
-}
-.field:focus {
-  border-color: var(--series-1);
-}
-.field::placeholder {
-  color: var(--text-muted);
-}
-
-.label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin-bottom: 0.3rem;
-  letter-spacing: 0.01em;
-}
-
-.card {
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-}
-
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Recharts tooltips are rendered outside our tree; style them here. */
-.recharts-default-tooltip {
-  background: var(--surface-1) !important;
-  border: 1px solid var(--border-strong) !important;
-  border-radius: 10px !important;
-  padding: 8px 10px !important;
-  font-size: 12px !important;
-}
-.recharts-tooltip-item-list {
-  font-variant-numeric: tabular-nums;
-}
-.recharts-cartesian-axis-tick-value {
-  font-size: 11px;
-  fill: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.recharts-curve.recharts-tooltip-cursor {
-  stroke: var(--axis);
-}
-
-/* Hide scrollbars on the horizontal chip rows without losing scrollability. */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  scrollbar-width: none;
-}
-
-@media print {
-  .no-print {
-    display: none !important;
+  These MUST be layered. Unlayered CSS beats layered CSS in the cascade whatever the
+  specificity, and Tailwind's utilities live in `@layer utilities` — so while this
+  block sat outside a layer, `button { font: inherit; color: inherit }` silently
+  overrode every font-size and text-colour utility applied to a button anywhere in
+  the app. It went unnoticed because the inherited colour is white in dark mode,
+  which is what the old solid-blue button wanted anyway; it only became visible once
+  a button needed dark text on a light accent.
+*/
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
   }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+
+  /* Native-feeling inputs that still respect the token set. */
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+
+/*
+  Component surfaces, in `@layer components` so utilities still win over them.
+
+  Same cascade reason as the base layer above: unlayered, `.card { border-radius }`
+  would beat `rounded-full` on the same element, and `.field { padding }` would beat
+  a padding utility — so the escape hatch of overriding a component class with a
+  utility would silently not work.
+*/
+@layer components {
+  .field {
+    width: 100%;
+    background: color-mix(in oklab, var(--surface-2) 70%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.65rem 0.75rem;
+    outline: none;
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease;
+    /* 16px minimum, or iOS Safari zooms the whole page on focus. */
+    font-size: 16px;
+  }
+  @media (min-width: 640px) {
+    .field {
+      font-size: 0.875rem;
+    }
+  }
+  .field:focus {
+    border-color: color-mix(in oklab, var(--accent) 75%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+  }
+  .field::placeholder {
+    color: var(--text-muted);
+  }
+
+  .label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+    letter-spacing: 0.01em;
+  }
+
+  /*
+    Content surface. Translucent gradient plus a bright top edge, which is what sells
+    glass: real glass catches light along its upper rim and falls off below. No
+    backdrop-filter here on purpose — see the token block. There are dozens of these
+    on a screen and they sit on a flat backdrop, so a filter would cost a great deal
+    and change nothing visible.
+  */
+  .card,
+  .pane {
+    position: relative;
+    border-radius: 18px;
+    background-color: color-mix(in oklab, var(--surface-1) 58%, transparent);
+    background-image: linear-gradient(176deg, var(--pane-from), var(--pane-to));
+    border: 1px solid var(--pane-border);
+    box-shadow:
+      inset 0 1px 0 var(--pane-highlight),
+      0 1px 2px -1px var(--pane-shadow),
+      0 10px 26px -14px var(--pane-shadow);
+  }
+
+  /*
+    Chrome that floats over content that moves underneath it: the nav bar, the mobile
+    header, sheets. This is where a backdrop-filter earns its cost — there is real
+    scrolling content behind it to blur. The saturation boost is what stops blurred
+    dark UI going muddy grey.
+  */
+  .glass {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(22px) saturate(170%);
+    backdrop-filter: blur(22px) saturate(170%);
+    border: 1px solid var(--glass-border);
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      0 10px 38px -10px var(--glass-shadow);
+  }
+
+  /*
+    Safari on iOS drops a backdrop-filter entirely if the element is fully
+    transparent in places, and older Android WebViews do not support it at all. In
+    both cases the element must still be readable, so the fallback is an opaque
+    surface rather than see-through text.
+  */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background: color-mix(in oklab, var(--surface-1) 94%, var(--page));
+    }
+  }
+
+  /* The moving highlight along the top rim of a floating element. */
+  .specular {
+    position: relative;
+  }
+  .specular::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      transparent 8%,
+      color-mix(in oklab, var(--glass-highlight) 55%, transparent) 46%,
+      transparent 62%
+    );
+    opacity: 0.5;
+  }
+
+  /*
+    A recessed container, for a segmented control's track.
+
+    The opposite treatment to `.card`: the highlight goes along the BOTTOM rim and the
+    shadow inside the top, which reads as pressed into the surface rather than sitting
+    on it. That is what makes the selected segment read as a raised thumb sliding in a
+    groove. No backdrop-filter — these sit on a static card, so there is nothing behind
+    them to blur, and several can be on screen at once.
+  */
+  .track {
+    background: color-mix(in oklab, var(--page) 55%, transparent);
+    border: 1px solid var(--pane-border);
+    box-shadow:
+      inset 0 1px 3px -1px var(--pane-shadow),
+      inset 0 -1px 0 var(--pane-highlight);
+  }
+
+  /*
+    The accent fill, shared by every selected control: primary buttons, the segmented
+    thumb, active chips. Lit along the top rim like the rest of the glass.
+
+    One class rather than the same gradient string inlined in five components, which
+    is how the range-picker chips ended up still painted the old blue after the
+    accent became configurable. `--accent-ink` rides along with it, so a control can
+    never end up with the fill and the wrong text colour.
+  */
+  .accent-fill {
+    background-image: linear-gradient(176deg, color-mix(in oklab, var(--accent) 88%, white), var(--accent));
+    color: var(--accent-ink);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  }
+
+  /* The floating tab bar: a pill, inset from the screen edges. */
+  .nav-float {
+    border-radius: 999px;
+  }
+
+  /* Accent-aware focus ring, on keyboard focus only. */
+  :focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--accent) 70%, transparent);
+    outline-offset: 2px;
+  }
+
+  /*
+    Two faint pools of accent-tinted light, behind everything and pinned to the viewport.
+
+    Glass only reads as glass when there is something behind it to refract. On a flat
+    single-colour page, translucency is invisible and every "frosted" surface just looks
+    like a slightly different grey. These pools are what the cards and the nav pick up,
+    and because they derive from --accent, changing the accent re-tints the whole app
+    rather than only its buttons.
+
+    A fixed element rather than `background-attachment: fixed` on the body: iOS Safari
+    treats that value unreliably and it can repaint on every frame of a scroll.
+  */
+  .ambience {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    /*
+      Absolute sizes, not percentages. Sized in percent, these pools scale with the
+      viewport: pleasant on a phone, but on a wide desktop they stretch into a heavy
+      wash over the whole window instead of reading as two sources of light. Fixed
+      radii keep the effect identical at every width.
+    */
+    background:
+      radial-gradient(46rem 30rem at 8% -6rem, var(--ambience-1), transparent 70%),
+      radial-gradient(38rem 26rem at 92% 2rem, var(--ambience-2), transparent 68%);
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Recharts tooltips are rendered outside our tree; style them here. */
+  .recharts-default-tooltip {
+    background: var(--surface-1) !important;
+    border: 1px solid var(--border-strong) !important;
+    border-radius: 10px !important;
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+  .recharts-tooltip-item-list {
+    font-variant-numeric: tabular-nums;
+  }
+  .recharts-cartesian-axis-tick-value {
+    font-size: 11px;
+    fill: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .recharts-curve.recharts-tooltip-cursor {
+    stroke: var(--axis);
+  }
+
+  /* Hide scrollbars on the horizontal chip rows without losing scrollability. */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  /*
+    Screen transition. Deliberately small: 160ms and a few pixels. A tab switch that
+    slides a long way reads as sluggish by the third time you do it, and this app is
+    used between sets.
+  */
+  @keyframes screen-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .screen-in {
+    animation: screen-in 160ms ease-out;
+  }
+
+  /* Fades the clipped end of a horizontally scrolling row, so it reads as "more this
+     way" instead of as a chip that has been cut in half. Applied per side by
+     ScrollRow, which only fades an end there is actually content past. */
+  .fade-l {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 22px);
+    mask-image: linear-gradient(to right, transparent, #000 22px);
+  }
+  .fade-r {
+    -webkit-mask-image: linear-gradient(to left, transparent, #000 22px);
+    mask-image: linear-gradient(to left, transparent, #000 22px);
+  }
+  .fade-l.fade-r {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 22px, #000 calc(100% - 22px), transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+  }
+
 }

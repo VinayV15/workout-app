@@ -268,7 +268,7 @@ export default function ExerciseGuide({
                   }}
                   className="flex-1 rounded-lg border px-2 py-1.5 text-[11px] transition"
                   style={{
-                    borderColor: i === enlarged ? 'var(--series-1)' : 'var(--border)',
+                    borderColor: i === enlarged ? 'var(--accent)' : 'var(--border)',
                     color: i === enlarged ? 'var(--text-primary)' : 'var(--text-secondary)',
                   }}
                 >

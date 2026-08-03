@@ -116,7 +116,7 @@ export default function Dashboard({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="mb-1 flex items-center gap-2">
-                <span className="text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--series-1)' }}>
+                <span className="text-[10px] font-semibold tracking-wider uppercase" style={{ color: 'var(--accent)' }}>
                   {plan ? plan.blockName : suggestion.kind === 'rest' ? 'Recovery' : suggestion.kind === 'lift' ? 'Strength' : 'Running'}
                 </span>
                 {plan && (
@@ -260,7 +260,7 @@ export default function Dashboard({
                 {weekLifts} / {data.goals.liftDaysPerWeek}
               </span>
             </div>
-            <Meter value={weekLifts} target={data.goals.liftDaysPerWeek} color={SERIES.s1} />
+            <Meter value={weekLifts} target={data.goals.liftDaysPerWeek} color="var(--accent)" />
             <div className="flex items-baseline justify-between pt-1 text-xs">
               <span className="text-ink-2">Runs</span>
               <span className="tabular text-ink-3">

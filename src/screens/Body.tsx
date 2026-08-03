@@ -145,7 +145,11 @@ function LogBody({ onSaved }: { onSaved: () => void }) {
 
         <div>
           <span className="label">Tape measurements ({lu})</span>
-          <div className="grid grid-cols-3 gap-2">
+          {/* Two across on a phone, three from `sm` up. Nine number inputs three
+              across leaves about 110px each, and at the 16px font size iOS needs to
+              not zoom on focus, placeholders like "Shoulders" and "Forearm" were
+              being clipped mid-word. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Field placeholder="Waist" type="number" inputMode="decimal" step="0.1" value={waist} onChange={(e) => setWaist(e.target.value)} />
             <Field placeholder="Neck" type="number" inputMode="decimal" step="0.1" value={neck} onChange={(e) => setNeck(e.target.value)} />
             <Field placeholder="Hips" type="number" inputMode="decimal" step="0.1" value={hips} onChange={(e) => setHips(e.target.value)} />

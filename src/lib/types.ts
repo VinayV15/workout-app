@@ -228,6 +228,13 @@ export interface Profile {
    * and by bar — a women's Olympic bar is 35 lb, a trap bar can be 60.
    */
   barWeightLb?: number
+  /**
+   * The accent colour, as a hex string. Undefined means the default.
+   *
+   * Lives in the profile so it syncs: the app should look like yours on every
+   * device you open it on, not just the one you picked the colour on.
+   */
+  accentHex?: string
 }
 
 /**

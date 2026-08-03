@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { StoreProvider, useStore } from './lib/store'
+import { accentVars } from './lib/accent'
 import Dashboard from './screens/Dashboard'
 import Onboarding from './screens/Onboarding'
 import Welcome from './screens/Welcome'
@@ -97,6 +98,22 @@ function Shell() {
   // session, and that user still needs the sign-in gate rather than setup.
   const signedIn = !!sync.email
 
+  /*
+    The user's accent, applied to the document root so every `var(--accent)` in the
+    app follows it — including the ambient light pools painted on `body`, which is
+    what makes changing it re-tint the glass rather than just the buttons.
+
+    Set on the root element rather than compiled into the stylesheet because it is a
+    per-user value living in the synced document: it has to be applied after the data
+    loads, and re-applied the moment it changes on another device.
+  */
+  useEffect(() => {
+    const root = document.documentElement
+    for (const [k, v] of Object.entries(accentVars(data.profile.accentHex))) {
+      root.style.setProperty(k, v)
+    }
+  }, [data.profile.accentHex])
+
   // Pull the other screens down in the background, so splitting them costs nothing
   // at the tap. Deliberately after the launch pull has settled — competing with the
   // sync request for bandwidth would delay the thing the user is waiting for.
@@ -134,8 +151,11 @@ function Shell() {
 
   return (
     <div className="min-h-dvh sm:flex">
+      {/* The light the glass refracts. Behind everything, pinned to the viewport. */}
+      <div className="ambience" aria-hidden />
+
       {/* Desktop sidebar */}
-      <nav className="no-print sticky top-0 hidden h-dvh w-52 shrink-0 flex-col border-r border-line px-3 py-5 sm:flex">
+      <nav className="no-print sticky top-0 hidden h-dvh w-56 shrink-0 flex-col border-r border-line/70 px-3 py-5 backdrop-blur-xl sm:flex">
         <div className="mb-6 px-2">
           <div className="text-lg font-semibold tracking-tight">Forge</div>
           <div className="text-[11px] text-ink-3">{data.profile.name ? data.profile.name : 'Training log'}</div>
@@ -145,11 +165,24 @@ function Shell() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition ${
-                tab === t.id ? 'bg-surface-2 font-medium text-ink' : 'text-ink-2 hover:text-ink'
+              className={`relative flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm transition-[background-color,color] duration-150 ${
+                tab === t.id ? 'font-medium text-ink' : 'text-ink-2 hover:bg-surface-2/60 hover:text-ink'
               }`}
+              style={
+                tab === t.id
+                  ? {
+                      background:
+                        'linear-gradient(176deg, color-mix(in oklab, var(--accent) 26%, transparent), color-mix(in oklab, var(--accent) 12%, transparent))',
+                      boxShadow: 'inset 0 1px 0 var(--pane-highlight)',
+                    }
+                  : undefined
+              }
             >
-              <span aria-hidden className="w-4 text-center text-ink-3">
+              <span
+                aria-hidden
+                className="w-4 text-center"
+                style={{ color: tab === t.id ? 'var(--accent)' : 'var(--text-muted)' }}
+              >
                 {t.icon}
               </span>
               {t.label}
@@ -159,8 +192,8 @@ function Shell() {
         </div>
         <button
           onClick={() => setTab('settings')}
-          className={`mt-auto flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition ${
-            tab === 'settings' ? 'bg-surface-2 font-medium text-ink' : 'text-ink-2 hover:text-ink'
+          className={`mt-auto flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm transition-[background-color,color] duration-150 ${
+            tab === 'settings' ? 'bg-surface-2/70 font-medium text-ink' : 'text-ink-2 hover:bg-surface-2/60 hover:text-ink'
           }`}
         >
           <span aria-hidden className="w-4 text-center text-ink-3">
@@ -170,22 +203,29 @@ function Shell() {
         </button>
       </nav>
 
-      <main className="min-w-0 flex-1 pb-24 sm:pb-8">
+      {/*
+        Bottom padding clears the floating bar rather than sitting behind it: the bar
+        is 60px tall, inset 14px from the bottom, and the home-indicator inset sits
+        below that again. Getting this wrong is what leaves the last card of a screen
+        permanently unreachable under the nav.
+      */}
+      <main className="min-w-0 flex-1 pb-[calc(96px+env(safe-area-inset-bottom))] sm:pb-8">
         {/* Mobile header */}
-        <header className="no-print sticky top-0 z-30 flex items-center justify-between border-b border-line bg-page/85 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur sm:hidden">
-          <span className="text-base font-semibold tracking-tight">
+        <header className="no-print sticky top-0 z-30 flex items-center justify-between border-b border-[color:var(--glass-border)] bg-[color:var(--glass-bg)] px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur-xl backdrop-saturate-150 sm:hidden">
+          <span className="text-[17px] font-semibold tracking-tight">
             {TABS.find((t) => t.id === tab)?.label ?? 'Settings'}
           </span>
           <button
             onClick={() => setTab('settings')}
-            className="rounded-lg px-2 py-1 text-ink-3"
+            className="-mr-1 flex h-9 w-9 items-center justify-center rounded-full text-ink-3 transition active:scale-95"
             aria-label="Settings"
           >
             ⚙
           </button>
         </header>
 
-        <div className="mx-auto max-w-3xl px-4 py-4 sm:px-6 sm:py-7">
+        {/* `key` on the tab so the entry animation replays on every switch. */}
+        <div key={tab} className="screen-in mx-auto max-w-3xl px-4 py-4 sm:px-6 sm:py-7">
           <Suspense fallback={<ScreenLoading />}>
             {tab === 'today' && <Dashboard onNavigate={setTab} />}
             {tab === 'lift' && <Lift />}
@@ -197,23 +237,56 @@ function Shell() {
         </div>
       </main>
 
-      {/* Mobile bottom tab bar */}
-      <nav className="no-print fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-page/90 pb-[max(0.4rem,env(safe-area-inset-bottom))] backdrop-blur sm:hidden">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition ${
-              tab === t.id ? 'text-ink' : 'text-ink-3'
-            }`}
-          >
-            <span aria-hidden className="text-base leading-none" style={tab === t.id ? { color: 'var(--series-1)' } : undefined}>
-              {t.icon}
-            </span>
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      {/*
+        Floating glass tab bar.
+
+        Inset from all three edges so the page's content scrolls visibly underneath
+        it — which is the entire point of the material, and impossible with the
+        edge-to-edge bar this replaces: a bar welded to the bottom of the screen has
+        nothing passing behind it to refract.
+
+        `pointer-events-none` on the positioning wrapper so the gap either side of
+        the pill does not swallow taps meant for the content beneath.
+      */}
+      <div className="no-print pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:hidden">
+        <nav className="glass nav-float specular pointer-events-auto flex w-full max-w-md items-stretch gap-0.5 p-1.5">
+          {TABS.map((t) => {
+            const active = tab === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                aria-current={active ? 'page' : undefined}
+                className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-2 text-[10px] font-medium transition-[color,transform] duration-150 active:scale-95 ${
+                  active ? 'text-ink' : 'text-ink-3'
+                }`}
+              >
+                {/* The accent pill sits behind the label, tinted rather than solid so
+                    the glass underneath still shows through it. */}
+                {active && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-0 rounded-full"
+                    style={{
+                      background:
+                        'linear-gradient(176deg, color-mix(in oklab, var(--accent) 34%, transparent), color-mix(in oklab, var(--accent) 14%, transparent))',
+                      boxShadow: 'inset 0 1px 0 var(--pane-highlight)',
+                    }}
+                  />
+                )}
+                <span
+                  aria-hidden
+                  className="relative text-[17px] leading-none"
+                  style={active ? { color: 'var(--accent)' } : undefined}
+                >
+                  {t.icon}
+                </span>
+                <span className="relative truncate">{t.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+      </div>
     </div>
   )
 }
